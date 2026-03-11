@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #f4f6f0; font-family: 'DM Mono', monospace; }
+  .layout { display: grid; grid-template-columns: 64px 1fr; min-height: 100vh; }
+  .sidebar { background: #fff; border-right: 1px solid #dde3d4; display: flex; flex-direction: column; align-items: center; padding: 24px 0; gap: 32px; position: sticky; top: 0; height: 100vh; }
+  .nav-item { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; color: #8a9478; font-size: 18px; border: none; background: none; }
+  .nav-item:hover { background: #eef1e8; color: #1a1f12; }
+  .nav-item.active { background: #6abf00; color: #fff; }
+  .card { background: #fff; border: 1px solid #dde3d4; border-radius: 14px; padding: 22px; position: relative; overflow: hidden; animation: fadeUp 0.5s ease both; }
+  .card::before { content: ''; position: absolute; top: -1px; left: 20px; right: 20px; height: 2px; background: linear-gradient(90deg, transparent, #6abf00, transparent); opacity: 0; transition: opacity 0.3s; }
+  .card:hover::before { opacity: 1; }
+  .chip { background: #fff; border: 1px solid #dde3d4; border-radius: 20px; padding: 6px 14px; font-size: 11px; letter-spacing: 0.5px; cursor: pointer; transition: border-color 0.15s; font-family: 'DM Mono', monospace; color: #1a1f12; }
+  .chip:hover, .chip.active { border-color: #6abf00; color: #6abf00; }
+  .tab { padding: 4px 10px; border-radius: 6px; font-size: 10px; cursor: pointer; color: #8a9478; letter-spacing: 0.5px; background: none; border: none; font-family: 'DM Mono', monospace; transition: all 0.15s; }
+  .tab.active { background: #eef1e8; color: #1a1f12; }
+  .sort-btn { background: none; border: 1px solid #dde3d4; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; padding: 5px 12px; border-radius: 20px; color: #8a9478; transition: all 0.15s; text-transform: uppercase; }
+  .sort-btn.active { background: #f0fdf4; border-color: #6abf00; color: #3a6600; }
+  .pos-row:hover td { background: #fafcf7; }
+  .del-btn { opacity: 0; transition: opacity 0.15s; }
+  .pos-row:hover .del-btn { opacity: 1; }
+  .up { color: #2ea84e; }
+  .down { color: #e03030; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-thumb { background: #dde3d4; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwgiEW2IW7ZKwc120CcevGfmJRKHJw2Zzm3_8koOXI4iT-hIMLOiAxxqXfc2zi1PR14/exec";
+const REFRESH_INTERVAL = 60 * 1000;
+
+const CATEGORIES = ["Tech", "Dividendové", "ETF", "Krypto", "Komodity", "Jiné"];
+const CAT_COLORS = {
+  Tech: "#6abf00", Dividendové: "#ff6b35", ETF: "#06b6d4",
+  Krypto: "#a78bfa", Komodity: "#fbbf24", Jiné: "#94a3b8",
+};
+
+async function apiFetch(params) {
+  const url = APPS_SCRIPT_URL + "?" + new URLSearchParams(params);
+  const res = await fetch(url);
+  return res.json();
+}
+
+async function apiPost(body) {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+const fmt = (n) =>
+  new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(n ?? 0);
+const fmtPct = (n) => (n == null ? "—" : (n >= 0 ? "+" : "") + n.toFixed(2) + " %");
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+function Donut({ positions, prices }) {
+  const byCat = {};
+  let total = 0;
+  positions.forEach((p) => {
+    const price = prices[p.ticker]?.current ?? Number(p.avgPrice);
+    const v = Number(p.shares) * price;
+    byCat[p.category] = (byCat[p.category] || 0) + v;
+    total += v;
+  });
+  const R = 52, cx = 70, cy = 70, stroke = 18;
+  const circ = 2 * Math.PI * R;
+  let offset = 0;
+  const segments = Object.entries(byCat).map(([cat, val]) => {
+    const pct = val / (total || 1);
+    const seg = { cat, pct, offset, dash: pct * circ };
+    offset += pct * circ;
+    return seg;
+  });
+  return (
+    <svg width="140" height="140" viewBox="0 0 140 140">
+      {segments.map((s) => (
+        <circle key={s.cat} cx={cx} cy={cy} r={R} fill="none"
+          stroke={CAT_COLORS[s.cat] || "#94a3b8"} strokeWidth={stroke}
+          strokeDasharray={`${s.dash} ${circ}`}
+          strokeDashoffset={-s.offset + circ * 0.25} />
+      ))}
+      <text x={cx} y={cy - 6} textAnchor="middle" fontSize="13"
+        fontFamily="'Syne',sans-serif" fontWeight="700" fill="#1a1f12">
+        {Object.keys(byCat).length}
+      </text>
+      <text x={cx} y={cy + 9} textAnchor="middle" fontSize="8"
+        fontFamily="'DM Mono',monospace" fill="#8a9478" letterSpacing="1">TŘÍDY</text>
+    </svg>
+  );
+}
+
+function Sparkline({ up }) {
+  const pts = up ? "0,22 20,18 40,14 60,10 80,5" : "0,5 20,10 40,14 60,18 80,22";
+  return (
+    <svg width="80" height="28" viewBox="0 0 80 28" fill="none">
+      <polyline points={pts} stroke={up ? "#2ea84e" : "#e03030"}
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PortfolioChart({ totalValue }) {
+  const W = 600, H = 140;
+  const pts = [0,2,-1,4,2,6,3,5,8,5,10,7,12,9,14,11,13,15,12,17,16];
+  const base = totalValue * 0.82;
+  const vals = pts.map((p, i) => base + (totalValue - base) * (i / (pts.length - 1)) * (1 + p / 100));
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const toY = (v) => H - ((v - min) / ((max - min) || 1)) * (H - 20) - 10;
+  const toX = (i) => (i / (pts.length - 1)) * W;
+  const pathD = vals.map((v, i) => `${i === 0 ? "M" : "L"}${toX(i)},${toY(v)}`).join(" ");
+  const areaD = `${pathD} L${W},${H} L0,${H}Z`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 140 }}>
+      <defs>
+        <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6abf00" stopOpacity="0.15" />
+          <stop offset="100%" stopColor="#6abf00" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0.25, 0.5, 0.75].map(t => (
+        <line key={t} x1="0" y1={H * t} x2={W} y2={H * t} stroke="#dde3d4" strokeWidth="1" />
+      ))}
+      <path d={areaD} fill="url(#cg)" />
+      <path d={pathD} stroke="#6abf00" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={toX(vals.length - 1)} cy={toY(vals[vals.length - 1])} r="5" fill="#6abf00" />
+      <circle cx={toX(vals.length - 1)} cy={toY(vals[vals.length - 1])} r="9" fill="#6abf00" fillOpacity="0.2" />
+    </svg>
+  );
+}
+
+function Modal({ onClose, onAdd, loading }) {
+  const [form, setForm] = useState({ ticker: "", name: "", category: "Tech", shares: "", avgPrice: "" });
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const valid = form.ticker && form.shares && form.avgPrice;
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.35)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999 }}>
+      <div style={{ background:"#fff", borderRadius:20, padding:"32px 36px", width:440, boxShadow:"0 32px 80px rgba(15,23,42,0.14)", fontFamily:"'DM Mono',monospace" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:28 }}>
+          <span style={{ fontFamily:"'Syne',sans-serif", fontSize:20, fontWeight:700, color:"#1a1f12" }}>Nová pozice</span>
+          <button onClick={onClose} style={{ background:"#f4f6f0", border:"none", borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:18, color:"#8a9478" }}>×</button>
+        </div>
+        {[
+          ["ticker","Ticker (AAPL, CEZ.PR…)","text"],
+          ["name","Název (volitelné)","text"],
+          ["shares","Počet kusů / lotů","number"],
+          ["avgPrice","Průměrná nákupní cena (Kč)","number"],
+        ].map(([k, label, type]) => (
+          <div key={k} style={{ marginBottom:14 }}>
+            <label style={{ fontSize:10, letterSpacing:1, color:"#8a9478", display:"block", marginBottom:5, textTransform:"uppercase" }}>{label}</label>
+            <input type={type} value={form[k]} onChange={set(k)}
+              style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #dde3d4", fontFamily:"'DM Mono',monospace", fontSize:13, color:"#1a1f12", outline:"none", boxSizing:"border-box" }}
+              onFocus={e => e.target.style.borderColor = "#6abf00"}
+              onBlur={e => e.target.style.borderColor = "#dde3d4"} />
+          </div>
+        ))}
+        <div style={{ marginBottom:24 }}>
+          <label style={{ fontSize:10, letterSpacing:1, color:"#8a9478", display:"block", marginBottom:5, textTransform:"uppercase" }}>Kategorie</label>
+          <select value={form.category} onChange={set("category")}
+            style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #dde3d4", fontFamily:"'DM Mono',monospace", fontSize:13, color:"#1a1f12", background:"#fff", outline:"none" }}>
+            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <button onClick={() => onAdd(form)} disabled={!valid || loading}
+          style={{ width:"100%", padding:13, background: valid && !loading ? "#6abf00" : "#eef1e8", border:"none", borderRadius:12, fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:500, color: valid && !loading ? "#fff" : "#8a9478", cursor: valid && !loading ? "pointer" : "not-allowed" }}>
+          {loading ? "Ukládám…" : "Přidat do portfolia →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [positions, setPositions]     = useState([]);
+  const [prices, setPrices]           = useState({});
+  const [loadingData, setLoadingData] = useState(true);
+  const [loadingPrices, setLoadingPrices] = useState(false);
+  const [savingPos, setSavingPos]     = useState(false);
+  const [error, setError]             = useState(null);
+  const [showModal, setShowModal]     = useState(false);
+  const [activeTab, setActiveTab]     = useState("přehled");
+  const [sortBy, setSortBy]           = useState("value");
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const intervalRef = useRef(null);
+
+  const loadPositions = useCallback(async () => {
+    try {
+      const data = await apiFetch({ action: "getPositions" });
+      if (data.error) throw new Error(data.error);
+      setPositions(data.positions || []);
+      return data.positions || [];
+    } catch (e) {
+      setError("Nepodařilo se načíst pozice: " + e.message);
+      return [];
+    }
+  }, []);
+
+  const loadPrices = useCallback(async (pos) => {
+    if (!pos || pos.length === 0) return;
+    setLoadingPrices(true);
+    try {
+      const tickers = [...new Set(pos.map(p => p.ticker))].join(",");
+      const data = await apiFetch({ action: "getPrices", tickers });
+      if (data.prices) {
+        setPrices(data.prices);
+        setLastUpdated(new Date());
+      }
+    } catch (e) {
+      console.error("Ceny se nepodařilo načíst:", e);
+    } finally {
+      setLoadingPrices(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      setLoadingData(true);
+      const pos = await loadPositions();
+      await loadPrices(pos);
+      setLoadingData(false);
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      if (positions.length > 0) loadPrices(positions);
+    }, REFRESH_INTERVAL);
+    return () => clearInterval(intervalRef.current);
+  }, [positions, loadPrices]);
+
+  const handleAdd = useCallback(async (form) => {
+    setSavingPos(true);
+    try {
+      const pos = {
+        id: uid(),
+        ticker: form.ticker.toUpperCase().trim(),
+        name: form.name || form.ticker.toUpperCase().trim(),
+        category: form.category,
+        shares: parseFloat(form.shares),
+        avgPrice: parseFloat(form.avgPrice),
+      };
+      const res = await apiPost({ action: "addPosition", position: pos });
+      if (res.error) throw new Error(res.error);
+      const updated = [...positions, pos];
+      setPositions(updated);
+      await loadPrices(updated);
+      setShowModal(false);
+    } catch (e) {
+      setError("Nepodařilo se přidat pozici: " + e.message);
+    } finally {
+      setSavingPos(false);
+    }
+  }, [positions, loadPrices]);
+
+  const handleDelete = useCallback(async (id) => {
+    try {
+      await apiFetch({ action: "deletePosition", id });
+      setPositions(p => p.filter(x => x.id !== id));
+    } catch (e) {
+      setError("Nepodařilo se smazat pozici.");
+    }
+  }, []);
+
+  const stats = useMemo(() => {
+    const totalValue = positions.reduce((s, p) => {
+      const price = prices[p.ticker]?.current ?? Number(p.avgPrice);
+      return s + Number(p.shares) * price;
+    }, 0);
+    const totalCost = positions.reduce((s, p) => s + Number(p.shares) * Number(p.avgPrice), 0);
+    const totalPnl = totalValue - totalCost;
+    const totalPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+    return { totalValue, totalCost, totalPnl, totalPct };
+  }, [positions, prices]);
+
+  const sortedPositions = useMemo(() => {
+    return [...positions].sort((a, b) => {
+      const priceA = prices[a.ticker]?.current ?? Number(a.avgPrice);
+      const priceB = prices[b.ticker]?.current ?? Number(b.avgPrice);
+      if (sortBy === "value") return b.shares * priceB - a.shares * priceA;
+      if (sortBy === "pnl") return (prices[b.ticker]?.changePct ?? 0) - (prices[a.ticker]?.changePct ?? 0);
+      if (sortBy === "ticker") return a.ticker.localeCompare(b.ticker);
+      return 0;
+    });
+  }, [positions, prices, sortBy]);
+
+  const byCategory = useMemo(() => {
+    const total = stats.totalValue || 1;
+    const map = {};
+    positions.forEach(p => {
+      const price = prices[p.ticker]?.current ?? Number(p.avgPrice);
+      const v = Number(p.shares) * price;
+      map[p.category] = (map[p.category] || 0) + v;
+    });
+    return Object.entries(map).map(([cat, val]) => ({ cat, val, pct: (val / total) * 100 })).sort((a, b) => b.pct - a.pct);
+  }, [positions, prices, stats.totalValue]);
+
+  const s = stats;
+
+  if (loadingData) return (
+    <div style={{ minHeight:"100vh", background:"#f4f6f0", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'DM Mono',monospace", gap:12 }}>
+      <div style={{ width:36, height:36, background:"#6abf00", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16, color:"#fff" }}>P</div>
+      <div style={{ fontSize:12, color:"#8a9478", letterSpacing:1 }}>NAČÍTÁM PORTFOLIO…</div>
+    </div>
+  );
+
+  return (
+    <div className="layout" style={{ color:"#1a1f12" }}>
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div style={{ width:36, height:36, background:"#6abf00", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16, color:"#fff" }}>P</div>
+        <nav style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, flex:1 }}>
+          {[["přehled","⬛"],["pozice","☰"],["alokace","◎"]].map(([tab, icon]) => (
+            <button key={tab} className={`nav-item${activeTab === tab ? " active" : ""}`} onClick={() => setActiveTab(tab)} title={tab}>{icon}</button>
+          ))}
+        </nav>
+        <button className="nav-item" title="Obnovit ceny" onClick={() => loadPrices(positions)} style={{ marginTop:"auto" }}>
+          {loadingPrices ? "⟳" : "↺"}
+        </button>
+      </aside>
+
+      {/* Main */}
+      <main style={{ padding:"32px 40px", maxWidth:1160 }}>
+        {/* Topbar */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:36 }}>
+          <div>
+            <h1 style={{ fontFamily:"'Syne',sans-serif", fontSize:26, fontWeight:700, letterSpacing:"-0.5px" }}>Přehled portfolia</h1>
+            <span style={{ fontSize:11, color:"#8a9478", letterSpacing:1 }}>
+              {lastUpdated ? `AKTUALIZOVÁNO ${lastUpdated.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit" })}` : "NAČÍTÁNÍ CEN…"}
+              {loadingPrices && " ⟳"}
+            </span>
+          </div>
+          <button onClick={() => setShowModal(true)} style={{ background:"#6abf00", color:"#fff", border:"none", borderRadius:20, padding:"9px 20px", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:500, letterSpacing:0.5, cursor:"pointer" }}>
+            + Přidat pozici
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ background:"#fff0f0", border:"1px solid #fca5a5", borderRadius:10, padding:"12px 16px", marginBottom:20, fontSize:12, color:"#e03030", display:"flex", justifyContent:"space-between" }}>
+            {error}
+            <span style={{ cursor:"pointer" }} onClick={() => setError(null)}>×</span>
+          </div>
+        )}
+
+        {/* PŘEHLED */}
+        {activeTab === "přehled" && (
+          <>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:24 }}>
+              {[
+                { label:"Celková hodnota", value:fmt(s.totalValue), sub:fmtPct(s.totalPct) + " celkem", up:s.totalPct >= 0 },
+                { label:"Zisk / Ztráta", value:fmt(s.totalPnl), sub:fmtPct(s.totalPct) + " od nákupu", up:s.totalPnl >= 0 },
+                { label:"Investováno", value:fmt(s.totalCost), sub:positions.length + " pozic", up:true },
+                { label:"V plusu dnes", value:positions.filter(p => (prices[p.ticker]?.changePct ?? 0) >= 0).length + " / " + positions.length, sub:"pozic zelených", up:true },
+              ].map((c, i) => (
+                <div key={i} className="card" style={{ animationDelay:`${i*0.07}s` }}>
+                  <div style={{ fontSize:10, letterSpacing:1.5, color:"#8a9478", textTransform:"uppercase", marginBottom:10 }}>{c.label}</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700 }}>{c.value}</div>
+                  <div style={{ fontSize:11, marginTop:6, color: c.up === false ? "#e03030" : "#2ea84e" }}>{c.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 340px", gap:20, marginBottom:20 }}>
+              <div className="card" style={{ padding:"24px 28px", animationDelay:"0.28s" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+                  <div>
+                    <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600 }}>Vývoj portfolia</div>
+                    <div style={{ fontSize:10, color:"#8a9478", letterSpacing:1, marginTop:2 }}>SIMULOVANÝ PRŮBĚH</div>
+                  </div>
+                </div>
+                <PortfolioChart totalValue={s.totalValue} />
+                <div style={{ display:"flex", justifyContent:"space-between", marginTop:8 }}>
+                  {["1. úno","8. úno","15. úno","22. úno","Dnes"].map((l, i) => (
+                    <span key={i} style={{ fontSize:10, color: i === 4 ? "#6abf00" : "#8a9478" }}>{l}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card" style={{ padding:"24px", animationDelay:"0.33s" }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:20 }}>Alokace</div>
+                <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+                  <Donut positions={positions} prices={prices} />
+                  <div style={{ flex:1, display:"flex", flexDirection:"column", gap:10 }}>
+                    {byCategory.map(({ cat, pct }) => (
+                      <div key={cat} style={{ display:"flex", alignItems:"center", gap:8, fontSize:11 }}>
+                        <div style={{ width:8, height:8, borderRadius:"50%", background:CAT_COLORS[cat]||"#94a3b8", flexShrink:0 }} />
+                        <span style={{ color:"#8a9478", flex:1 }}>{cat}</span>
+                        <span>{pct.toFixed(1)} %</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 340px", gap:20 }}>
+              <div className="card" style={{ padding:"24px 28px", animationDelay:"0.38s" }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:18 }}>Pozice</div>
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                  <thead>
+                    <tr>{["Název","Cena","Změna dnes","Hodnota","Podíl"].map((h, i) => (
+                      <th key={i} style={{ fontSize:9, letterSpacing:1.5, color:"#8a9478", textAlign:i>0?"right":"left", paddingBottom:12, borderBottom:"1px solid #dde3d4", textTransform:"uppercase" }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {sortedPositions.map(p => {
+                      const price = prices[p.ticker]?.current ?? Number(p.avgPrice);
+                      const chPct = prices[p.ticker]?.changePct ?? null;
+                      const val = Number(p.shares) * price;
+                      const share = s.totalValue > 0 ? (val / s.totalValue) * 100 : 0;
+                      return (
+                        <tr key={p.id} className="pos-row">
+                          <td style={{ padding:"12px 0", borderBottom:"1px solid #eef1e8" }}>
+                            <div style={{ fontSize:13, fontWeight:500, letterSpacing:0.5 }}>{p.ticker}</div>
+                            <div style={{ fontSize:10, color:"#8a9478" }}>{p.name}</div>
+                          </td>
+                          <td style={{ textAlign:"right", fontSize:12, borderBottom:"1px solid #eef1e8" }}>{fmt(price)}</td>
+                          <td style={{ textAlign:"right", fontSize:12, borderBottom:"1px solid #eef1e8" }} className={chPct == null ? "" : chPct >= 0 ? "up" : "down"}>{fmtPct(chPct)}</td>
+                          <td style={{ textAlign:"right", fontSize:12, fontWeight:500, borderBottom:"1px solid #eef1e8" }}>{fmt(val)}</td>
+                          <td style={{ textAlign:"right", borderBottom:"1px solid #eef1e8", paddingLeft:12 }}>
+                            <div style={{ background:"#eef1e8", borderRadius:3, height:4, width:80, overflow:"hidden", marginLeft:"auto" }}>
+                              <div style={{ width:`${share}%`, height:"100%", background:"#6abf00", borderRadius:3 }} />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {positions.length === 0 && (
+                  <div style={{ textAlign:"center", padding:"32px 0", color:"#8a9478", fontSize:12 }}>
+                    Žádné pozice. <span style={{ color:"#6abf00", cursor:"pointer" }} onClick={() => setShowModal(true)}>Přidat první →</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="card" style={{ padding:"24px", animationDelay:"0.43s" }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:18 }}>Dnešní pohyby</div>
+                {positions.length === 0 ? (
+                  <div style={{ fontSize:12, color:"#8a9478" }}>Zatím žádné pozice.</div>
+                ) : (
+                  [...positions]
+                    .filter(p => prices[p.ticker])
+                    .sort((a, b) => Math.abs(prices[b.ticker]?.changePct ?? 0) - Math.abs(prices[a.ticker]?.changePct ?? 0))
+                    .slice(0, 6)
+                    .map(p => {
+                      const ch = prices[p.ticker];
+                      const up = ch.changePct >= 0;
+                      return (
+                        <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderBottom:"1px solid #eef1e8" }}>
+                          <div style={{ width:34, height:34, borderRadius:10, background: up ? "rgba(46,168,78,0.1)" : "rgba(224,48,48,0.1)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color: up ? "#2ea84e" : "#e03030" }}>{up ? "↑" : "↓"}</div>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontSize:12, fontWeight:500 }}>{p.ticker}</div>
+                            <div style={{ fontSize:10, color:"#8a9478", marginTop:2 }}>{fmt(ch.current)}</div>
+                          </div>
+                          <Sparkline up={up} />
+                          <div style={{ fontSize:12 }} className={up ? "up" : "down"}>{fmtPct(ch.changePct)}</div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* POZICE */}
+        {activeTab === "pozice" && (
+          <div className="card" style={{ padding:"28px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:600 }}>Všechny pozice</div>
+              <div style={{ display:"flex", gap:6 }}>
+                {[["value","Hodnota"],["pnl","Výkonnost"],["ticker","Ticker"]].map(([k, l]) => (
+                  <button key={k} className={`sort-btn${sortBy === k ? " active" : ""}`} onClick={() => setSortBy(k)}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <thead>
+                <tr>{["Název","Akt. cena","Prům. nákup","Kusů","Hodnota","P&L dnes","P&L celkem",""].map((h, i) => (
+                  <th key={i} style={{ fontSize:9, letterSpacing:1.5, color:"#8a9478", textAlign:i>0?"right":"left", paddingBottom:12, borderBottom:"1px solid #dde3d4", textTransform:"uppercase", whiteSpace:"nowrap" }}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {sortedPositions.map((p, idx) => {
+                  const price  = prices[p.ticker]?.current ?? Number(p.avgPrice);
+                  const chPct  = prices[p.ticker]?.changePct ?? null;
+                  const chAbs  = prices[p.ticker]?.change ?? null;
+                  const val    = Number(p.shares) * price;
+                  const cost   = Number(p.shares) * Number(p.avgPrice);
+                  const pnl    = val - cost;
+                  const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
+                  const dayPnl = chAbs != null ? chAbs * Number(p.shares) : null;
+                  return (
+                    <tr key={p.id} className="pos-row">
+                      <td style={{ padding:"13px 0", borderBottom:"1px solid #eef1e8" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <div style={{ width:32, height:32, borderRadius:8, background:`${CAT_COLORS[p.category]||"#94a3b8"}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:500, color:CAT_COLORS[p.category]||"#94a3b8", letterSpacing:0.5 }}>{p.ticker.slice(0,3)}</div>
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:500 }}>{p.ticker}</div>
+                            <div style={{ fontSize:10, color:"#8a9478" }}>{p.name}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ textAlign:"right", fontSize:12, borderBottom:"1px solid #eef1e8" }}>{fmt(price)}</td>
+                      <td style={{ textAlign:"right", fontSize:12, color:"#8a9478", borderBottom:"1px solid #eef1e8" }}>{fmt(Number(p.avgPrice))}</td>
+                      <td style={{ textAlign:"right", fontSize:12, borderBottom:"1px solid #eef1e8" }}>{p.shares}</td>
+                      <td style={{ textAlign:"right", fontSize:12, fontWeight:500, borderBottom:"1px solid #eef1e8" }}>{fmt(val)}</td>
+                      <td style={{ textAlign:"right", borderBottom:"1px solid #eef1e8" }}>
+                        <div style={{ fontSize:12 }} className={chPct == null ? "" : chPct >= 0 ? "up" : "down"}>{fmtPct(chPct)}</div>
+                        {dayPnl != null && <div style={{ fontSize:10, color: dayPnl >= 0 ? "#86efac" : "#fca5a5" }}>{fmt(dayPnl)}</div>}
+                      </td>
+                      <td style={{ textAlign:"right", borderBottom:"1px solid #eef1e8" }}>
+                        <div style={{ fontSize:12 }} className={pnlPct >= 0 ? "up" : "down"}>{fmtPct(pnlPct)}</div>
+                        <div style={{ fontSize:10, color: pnl >= 0 ? "#86efac" : "#fca5a5" }}>{fmt(pnl)}</div>
+                      </td>
+                      <td style={{ borderBottom:"1px solid #eef1e8", textAlign:"right" }}>
+                        <button className="del-btn" onClick={() => handleDelete(p.id)} style={{ background:"#fff0f0", border:"none", borderRadius:6, width:26, height:26, cursor:"pointer", fontSize:12, color:"#e03030" }}>×</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {positions.length === 0 && (
+              <div style={{ textAlign:"center", padding:"40px 0", color:"#8a9478", fontSize:13 }}>
+                Žádné pozice. <span style={{ color:"#6abf00", cursor:"pointer" }} onClick={() => setShowModal(true)}>Přidat první →</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ALOKACE */}
+        {activeTab === "alokace" && (
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20 }}>
+            <div className="card" style={{ padding:"28px" }}>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:20 }}>Rozložení portfolia</div>
+              <div style={{ display:"flex", alignItems:"center", gap:20 }}>
+                <Donut positions={positions} prices={prices} />
+                <div style={{ flex:1 }}>
+                  {byCategory.map(({ cat, val, pct }) => (
+                    <div key={cat} style={{ marginBottom:14 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <div style={{ width:8, height:8, borderRadius:"50%", background:CAT_COLORS[cat]||"#94a3b8" }} />
+                          <span style={{ fontSize:11, color:"#8a9478" }}>{cat}</span>
+                        </div>
+                        <span style={{ fontSize:11, fontWeight:500 }}>{pct.toFixed(1)} % · {fmt(val)}</span>
+                      </div>
+                      <div style={{ background:"#eef1e8", borderRadius:4, height:5, overflow:"hidden" }}>
+                        <div style={{ width:`${pct}%`, height:"100%", background:CAT_COLORS[cat]||"#94a3b8", borderRadius:4, transition:"width 0.6s ease" }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="card" style={{ padding:"28px" }}>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:20 }}>Jednotlivé pozice</div>
+              {sortedPositions.map(p => {
+                const price = prices[p.ticker]?.current ?? Number(p.avgPrice);
+                const val   = Number(p.shares) * price;
+                const share = s.totalValue > 0 ? (val / s.totalValue) * 100 : 0;
+                return (
+                  <div key={p.id} style={{ marginBottom:12 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <div style={{ width:8, height:8, borderRadius:"50%", background:CAT_COLORS[p.category]||"#94a3b8" }} />
+                        <span style={{ fontSize:11, color:"#8a9478" }}>{p.ticker}</span>
+                      </div>
+                      <span style={{ fontSize:11 }}>{share.toFixed(1)} % · {fmt(val)}</span>
+                    </div>
+                    <div style={{ background:"#eef1e8", borderRadius:4, height:4, overflow:"hidden" }}>
+                      <div style={{ width:`${share}%`, height:"100%", background:CAT_COLORS[p.category]||"#94a3b8", borderRadius:4, transition:"width 0.6s ease" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="card" style={{ padding:"24px 28px", gridColumn:"1/-1" }}>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:18 }}>Výkonnost podle kategorie</div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14 }}>
+                {byCategory.map(({ cat, val }) => {
+                  const catPos  = positions.filter(p => p.category === cat);
+                  const catCost = catPos.reduce((s, p) => s + Number(p.shares) * Number(p.avgPrice), 0);
+                  const catPnl  = val - catCost;
+                  const catPct  = catCost > 0 ? (catPnl / catCost) * 100 : 0;
+                  return (
+                    <div key={cat} style={{ background:"#f4f6f0", borderRadius:12, padding:"16px 18px" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                        <div style={{ width:10, height:10, borderRadius:"50%", background:CAT_COLORS[cat]||"#94a3b8" }} />
+                        <span style={{ fontSize:10, letterSpacing:0.5, color:"#8a9478", textTransform:"uppercase" }}>{cat}</span>
+                      </div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:18, fontWeight:700 }}>{fmt(val)}</div>
+                      <div style={{ fontSize:11, marginTop:4 }} className={catPct >= 0 ? "up" : "down"}>{fmtPct(catPct)} · {fmt(catPnl)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {showModal && <Modal onClose={() => setShowModal(false)} onAdd={handleAdd} loading={savingPos} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
