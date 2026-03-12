@@ -50,6 +50,11 @@ const CAT_COLORS = {
   Krypto: "#a78bfa", Komodity: "#fbbf24", Jiné: "#94a3b8",
 };
 
+const DEFAULT_BROKERS = ["Trading 212", "XTB", "Revolut"];
+const BROKER_COLORS = {
+  "Trading 212": "#6abf00", "XTB": "#ff6b35", "Revolut": "#06b6d4",
+};
+
 async function apiFetch(params) {
   const url = APPS_SCRIPT_URL + "?" + new URLSearchParams(params);
   const res = await fetch(url);
@@ -145,38 +150,189 @@ function PortfolioChart({ totalValue }) {
 }
 
 function Modal({ onClose, onAdd, loading }) {
-  const [form, setForm] = useState({ ticker: "", name: "", category: "Tech", shares: "", avgPrice: "" });
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
-  const valid = form.ticker && form.shares && form.avgPrice;
+  const now = new Date();
+  const localISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+
+  const [form, setForm] = useState({
+    ticker: "", name: "", category: "Tech",
+    shares: "", fillPrice: "", volume: "",
+    currency: "CZK", datetime: localISO,
+    nameLoading: false, nameLoaded: false, otherCurrency: "",
+    broker: "Trading 212", customBroker: false,
+  });
+
+  const set = (k) => (e) => {
+    const val = e.target.value;
+    setForm(f => {
+      const updated = { ...f, [k]: val };
+      // Auto-recalculate volume when shares or fillPrice changes
+      if (k === "shares" || k === "fillPrice") {
+        const s = k === "shares" ? val : f.shares;
+        const p = k === "fillPrice" ? val : f.fillPrice;
+        if (s && p) updated.volume = (parseFloat(s) * parseFloat(p)).toFixed(2);
+      }
+      return updated;
+    });
+  };
+
+  // Lookup company name from Finnhub when ticker loses focus
+  const handleTickerBlur = async () => {
+    const ticker = form.ticker.trim().toUpperCase();
+    if (!ticker || form.nameLoaded) return;
+    setForm(f => ({ ...f, nameLoading: true }));
+    try {
+      const res = await fetch(APPS_SCRIPT_URL + "?" + new URLSearchParams({ action: "getCompanyName", ticker }));
+      const data = await res.json();
+      setForm(f => ({
+        ...f,
+        nameLoading: false,
+        nameLoaded: true,
+        name: data.name || f.name,
+        currency: data.currency || f.currency,
+      }));
+    } catch {
+      setForm(f => ({ ...f, nameLoading: false }));
+    }
+  };
+
+  const CURRENCIES = ["CZK","USD","EUR","GBP","Jiná…"];
+  const activeCurrency = CURRENCIES.includes(form.currency) && form.currency !== "Jiná…" ? form.currency : "Jiná…";
+  const valid = form.ticker && form.shares && form.fillPrice && form.datetime;
+
+  const inputStyle = { width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #dde3d4", fontFamily:"'DM Mono',monospace", fontSize:13, color:"#1a1f12", outline:"none", boxSizing:"border-box", background:"#fff" };
+  const labelStyle = { fontSize:10, letterSpacing:1, color:"#8a9478", display:"block", marginBottom:5, textTransform:"uppercase" };
+
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.35)", backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999 }}>
-      <div style={{ background:"#fff", borderRadius:20, padding:"32px 36px", width:440, boxShadow:"0 32px 80px rgba(15,23,42,0.14)", fontFamily:"'DM Mono',monospace" }}>
+      <div style={{ background:"#fff", borderRadius:20, padding:"32px 36px", width:500, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 32px 80px rgba(15,23,42,0.14)", fontFamily:"'DM Mono',monospace" }}>
+
+        {/* Header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:28 }}>
-          <span style={{ fontFamily:"'Syne',sans-serif", fontSize:20, fontWeight:700, color:"#1a1f12" }}>Nová pozice</span>
+          <span style={{ fontFamily:"'Syne',sans-serif", fontSize:20, fontWeight:700, color:"#1a1f12" }}>Nová transakce</span>
           <button onClick={onClose} style={{ background:"#f4f6f0", border:"none", borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:18, color:"#8a9478" }}>×</button>
         </div>
-        {[
-          ["ticker","Ticker (AAPL, CEZ.PR…)","text"],
-          ["name","Název (volitelné)","text"],
-          ["shares","Počet kusů / lotů","number"],
-          ["avgPrice","Průměrná nákupní cena (Kč)","number"],
-        ].map(([k, label, type]) => (
-          <div key={k} style={{ marginBottom:14 }}>
-            <label style={{ fontSize:10, letterSpacing:1, color:"#8a9478", display:"block", marginBottom:5, textTransform:"uppercase" }}>{label}</label>
-            <input type={type} value={form[k]} onChange={set(k)}
-              style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #dde3d4", fontFamily:"'DM Mono',monospace", fontSize:13, color:"#1a1f12", outline:"none", boxSizing:"border-box" }}
-              onFocus={e => e.target.style.borderColor = "#6abf00"}
-              onBlur={e => e.target.style.borderColor = "#dde3d4"} />
+
+        {/* Ticker + název */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:12, marginBottom:14 }}>
+          <div>
+            <label style={labelStyle}>Ticker</label>
+            <input value={form.ticker} onChange={(e) => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase(), nameLoaded: false }))}
+              onBlur={handleTickerBlur} placeholder="AAPL"
+              style={inputStyle}
+              onFocus={e => e.target.style.borderColor="#6abf00"}
+            />
           </div>
-        ))}
+          <div>
+            <label style={labelStyle}>
+              Název společnosti
+              {form.nameLoading && <span style={{ marginLeft:6, color:"#6abf00" }}>načítám…</span>}
+              {form.nameLoaded && !form.nameLoading && <span style={{ marginLeft:6, color:"#2ea84e" }}>✓ načteno</span>}
+            </label>
+            <input value={form.name} onChange={set("name")} placeholder="automaticky po zadání tickeru"
+              style={{ ...inputStyle, color: form.nameLoaded ? "#1a1f12" : "#8a9478" }}
+              onFocus={e => e.target.style.borderColor="#6abf00"}
+              onBlur={e => e.target.style.borderColor="#dde3d4"}
+            />
+          </div>
+        </div>
+
+        {/* Datum a čas */}
+        <div style={{ marginBottom:14 }}>
+          <label style={labelStyle}>Datum a čas transakce</label>
+          <input type="datetime-local" value={form.datetime} onChange={set("datetime")}
+            style={inputStyle}
+            onFocus={e => e.target.style.borderColor="#6abf00"}
+            onBlur={e => e.target.style.borderColor="#dde3d4"}
+          />
+        </div>
+
+        {/* Počet ks + Realizační cena */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+          <div>
+            <label style={labelStyle}>Počet kusů</label>
+            <input type="number" value={form.shares} onChange={set("shares")} placeholder="10"
+              style={inputStyle}
+              onFocus={e => e.target.style.borderColor="#6abf00"}
+              onBlur={e => e.target.style.borderColor="#dde3d4"}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Realizační cena</label>
+            <input type="number" value={form.fillPrice} onChange={set("fillPrice")} placeholder="4 790"
+              style={inputStyle}
+              onFocus={e => e.target.style.borderColor="#6abf00"}
+              onBlur={e => e.target.style.borderColor="#dde3d4"}
+            />
+          </div>
+        </div>
+
+        {/* Objem + Měna */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+          <div>
+            <label style={labelStyle}>Objem transakce</label>
+            <input type="number" value={form.volume} onChange={set("volume")} placeholder="automaticky"
+              style={{ ...inputStyle, background: form.shares && form.fillPrice ? "#f9fbf6" : "#fff" }}
+              onFocus={e => e.target.style.borderColor="#6abf00"}
+              onBlur={e => e.target.style.borderColor="#dde3d4"}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Měna</label>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {CURRENCIES.map(c => (
+                <button key={c} onClick={() => setForm(f => ({ ...f, currency: c === "Jiná…" ? "" : c }))}
+                  style={{ padding:"6px 12px", borderRadius:8, border:`1.5px solid ${activeCurrency === c ? "#6abf00" : "#dde3d4"}`, background: activeCurrency === c ? "#f0fdf4" : "#fff", color: activeCurrency === c ? "#3a6600" : "#8a9478", fontSize:11, cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            {activeCurrency === "Jiná…" && (
+              <input value={form.currency} onChange={set("currency")} placeholder="např. CHF, JPY…"
+                style={{ ...inputStyle, marginTop:8 }}
+                onFocus={e => e.target.style.borderColor="#6abf00"}
+                onBlur={e => e.target.style.borderColor="#dde3d4"}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Kategorie */}
         <div style={{ marginBottom:24 }}>
-          <label style={{ fontSize:10, letterSpacing:1, color:"#8a9478", display:"block", marginBottom:5, textTransform:"uppercase" }}>Kategorie</label>
+          <label style={labelStyle}>Kategorie</label>
           <select value={form.category} onChange={set("category")}
-            style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #dde3d4", fontFamily:"'DM Mono',monospace", fontSize:13, color:"#1a1f12", background:"#fff", outline:"none" }}>
+            style={{ ...inputStyle, cursor:"pointer" }}>
             {CATEGORIES.map(c => <option key={c}>{c}</option>)}
           </select>
         </div>
-        <button onClick={() => onAdd(form)} disabled={!valid || loading}
+
+        {/* Broker */}
+        <div style={{ marginBottom:14 }}>
+          <label style={labelStyle}>Broker</label>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom: form.broker === "Jiný…" ? 8 : 0 }}>
+            {[...DEFAULT_BROKERS, "Jiný…"].map(b => (
+              <button key={b} onClick={() => setForm(f => ({ ...f, broker: b === "Jiný…" ? "" : b, customBroker: b === "Jiný…" }))}
+                style={{ padding:"6px 12px", borderRadius:8, border:`1.5px solid ${(form.broker === b || (form.customBroker && b === "Jiný…")) ? "#6abf00" : "#dde3d4"}`, background:(form.broker === b || (form.customBroker && b === "Jiný…")) ? "#f0fdf4" : "#fff", color:(form.broker === b || (form.customBroker && b === "Jiný…")) ? "#3a6600" : "#8a9478", fontSize:11, cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>
+                {b}
+              </button>
+            ))}
+          </div>
+          {form.customBroker && (
+            <input value={form.broker} onChange={e => setForm(f => ({ ...f, broker: e.target.value }))}
+              placeholder="Název brokera…" style={{ ...inputStyle, marginTop:6 }}
+              onFocus={e => e.target.style.borderColor="#6abf00"}
+              onBlur={e => e.target.style.borderColor="#dde3d4"} />
+          )}
+        </div>
+
+        {/* Shrnutí */}
+        {form.shares && form.fillPrice && (
+          <div style={{ background:"#f4f6f0", borderRadius:10, padding:"12px 16px", marginBottom:20, fontSize:11, color:"#8a9478", display:"flex", justifyContent:"space-between" }}>
+            <span>{form.shares} ks × {form.fillPrice} {form.currency || "—"}</span>
+            <span style={{ color:"#1a1f12", fontWeight:500 }}>= {form.volume ? parseFloat(form.volume).toLocaleString("cs-CZ") : "—"} {form.currency}</span>
+          </div>
+        )}
+
+        <button onClick={() => onAdd({ ...form, avgPrice: form.fillPrice })} disabled={!valid || loading}
           style={{ width:"100%", padding:13, background: valid && !loading ? "#6abf00" : "#eef1e8", border:"none", borderRadius:12, fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:500, color: valid && !loading ? "#fff" : "#8a9478", cursor: valid && !loading ? "pointer" : "not-allowed" }}>
           {loading ? "Ukládám…" : "Přidat do portfolia →"}
         </button>
@@ -325,7 +481,7 @@ function App() {
       <aside className="sidebar">
         <div style={{ width:36, height:36, background:"#6abf00", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16, color:"#fff" }}>P</div>
         <nav style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, flex:1 }}>
-          {[["přehled","⬛"],["pozice","☰"],["alokace","◎"]].map(([tab, icon]) => (
+          {[["přehled","⬛"],["pozice","☰"],["alokace","◎"],["brokeři","▣"]].map(([tab, icon]) => (
             <button key={tab} className={`nav-item${activeTab === tab ? " active" : ""}`} onClick={() => setActiveTab(tab)} title={tab}>{icon}</button>
           ))}
         </nav>
@@ -617,6 +773,135 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* ── BROKEŘI ───────────────────────────────────────────────── */}
+        {activeTab === "brokeři" && (() => {
+          // Compute per-broker stats
+          const brokerMap = {};
+          positions.forEach(p => {
+            const b = p.broker || "Nezadán";
+            const price = prices[p.ticker]?.current ?? Number(p.avgPrice);
+            const val  = Number(p.shares) * price;
+            const cost = Number(p.shares) * Number(p.avgPrice);
+            if (!brokerMap[b]) brokerMap[b] = { value:0, cost:0, positions:[] };
+            brokerMap[b].value     += val;
+            brokerMap[b].cost      += cost;
+            brokerMap[b].positions.push(p);
+          });
+          const brokers = Object.entries(brokerMap).map(([name, d]) => ({
+            name, ...d, pnl: d.value - d.cost, pnlPct: d.cost > 0 ? ((d.value - d.cost) / d.cost) * 100 : 0,
+            share: s.totalValue > 0 ? (d.value / s.totalValue) * 100 : 0,
+          })).sort((a,b) => b.value - a.value);
+
+          const getColor = (name) => BROKER_COLORS[name] || "#94a3b8";
+
+          return (
+            <div>
+              {/* Porovnání karet */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:16, marginBottom:24 }}>
+                {brokers.map((b, i) => (
+                  <div key={b.name} className="card" style={{ animationDelay:`${i*0.07}s`, borderTop:`3px solid ${getColor(b.name)}` }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+                      <div style={{ width:36, height:36, borderRadius:10, background:`${getColor(b.name)}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:getColor(b.name), fontFamily:"'Syne',sans-serif" }}>{b.name.slice(0,2).toUpperCase()}</div>
+                      <div>
+                        <div style={{ fontFamily:"'Syne',sans-serif", fontSize:14, fontWeight:700 }}>{b.name}</div>
+                        <div style={{ fontSize:10, color:"#8a9478" }}>{b.positions.length} pozic · {b.share.toFixed(1)} % portfolia</div>
+                      </div>
+                    </div>
+                    <div style={{ marginBottom:8 }}>
+                      <div style={{ fontSize:10, color:"#8a9478", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>Celková hodnota</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700 }}>{fmt(b.value)}</div>
+                    </div>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:11 }}>
+                      <div>
+                        <div style={{ color:"#8a9478", marginBottom:2 }}>Investováno</div>
+                        <div>{fmt(b.cost)}</div>
+                      </div>
+                      <div style={{ textAlign:"right" }}>
+                        <div style={{ color:"#8a9478", marginBottom:2 }}>Zisk / Ztráta</div>
+                        <div className={b.pnlPct >= 0 ? "up" : "down"}>{fmtPct(b.pnlPct)} · {fmt(b.pnl)}</div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop:12, background:"#eef1e8", borderRadius:4, height:4, overflow:"hidden" }}>
+                      <div style={{ width:`${b.share}%`, height:"100%", background:getColor(b.name), borderRadius:4, transition:"width 0.6s ease" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Porovnání vedle sebe — bar chart */}
+              <div className="card" style={{ padding:"28px", marginBottom:20 }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:20 }}>Porovnání brokerů</div>
+                {brokers.length === 0 ? (
+                  <div style={{ color:"#8a9478", fontSize:12 }}>Žádné pozice se zadaným brokerem.</div>
+                ) : brokers.map(b => (
+                  <div key={b.name} style={{ marginBottom:18 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <div style={{ width:10, height:10, borderRadius:"50%", background:getColor(b.name) }} />
+                        <span style={{ fontSize:12, fontWeight:500 }}>{b.name}</span>
+                        <span style={{ fontSize:10, color:"#8a9478" }}>{b.positions.length} pozic</span>
+                      </div>
+                      <div style={{ display:"flex", gap:20, fontSize:11 }}>
+                        <span>{fmt(b.value)}</span>
+                        <span className={b.pnlPct >= 0 ? "up" : "down"}>{fmtPct(b.pnlPct)}</span>
+                      </div>
+                    </div>
+                    {/* Stacked bar: cost vs gain */}
+                    <div style={{ background:"#eef1e8", borderRadius:6, height:10, overflow:"hidden", display:"flex" }}>
+                      <div style={{ width:`${b.share}%`, height:"100%", background:getColor(b.name), borderRadius:6, transition:"width 0.6s ease", opacity:0.9 }} />
+                    </div>
+                  </div>
+                ))}
+                {/* Legend total */}
+                <div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid #eef1e8", display:"flex", justifyContent:"space-between", fontSize:11, color:"#8a9478" }}>
+                  <span>Celkem portfolio</span>
+                  <span style={{ color:"#1a1f12", fontWeight:500 }}>{fmt(s.totalValue)}</span>
+                </div>
+              </div>
+
+              {/* Pozice podle brokera */}
+              <div className="card" style={{ padding:"28px" }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:600, marginBottom:20 }}>Pozice podle brokera</div>
+                {brokers.map(b => (
+                  <div key={b.name} style={{ marginBottom:24 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, paddingBottom:8, borderBottom:`2px solid ${getColor(b.name)}22` }}>
+                      <div style={{ width:8, height:8, borderRadius:"50%", background:getColor(b.name) }} />
+                      <span style={{ fontFamily:"'Syne',sans-serif", fontSize:13, fontWeight:600 }}>{b.name}</span>
+                    </div>
+                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                      <thead>
+                        <tr>{["Ticker","Cena","Hodnota","P&L"].map((h,i) => (
+                          <th key={i} style={{ fontSize:9, letterSpacing:1.5, color:"#8a9478", textAlign:i>0?"right":"left", paddingBottom:8, textTransform:"uppercase" }}>{h}</th>
+                        ))}</tr>
+                      </thead>
+                      <tbody>
+                        {b.positions.map(p => {
+                          const price  = prices[p.ticker]?.current ?? Number(p.avgPrice);
+                          const val    = Number(p.shares) * price;
+                          const cost   = Number(p.shares) * Number(p.avgPrice);
+                          const pnlPct = cost > 0 ? ((val-cost)/cost)*100 : 0;
+                          return (
+                            <tr key={p.id}>
+                              <td style={{ padding:"8px 0", fontSize:12, borderBottom:"1px solid #f4f6f0" }}>
+                                <span style={{ fontWeight:500 }}>{p.ticker}</span>
+                                <span style={{ fontSize:10, color:"#8a9478", marginLeft:6 }}>{p.name}</span>
+                              </td>
+                              <td style={{ textAlign:"right", fontSize:11, color:"#8a9478", borderBottom:"1px solid #f4f6f0" }}>{fmt(price)}</td>
+                              <td style={{ textAlign:"right", fontSize:12, borderBottom:"1px solid #f4f6f0" }}>{fmt(val)}</td>
+                              <td style={{ textAlign:"right", fontSize:12, borderBottom:"1px solid #f4f6f0" }} className={pnlPct >= 0 ? "up" : "down"}>{fmtPct(pnlPct)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+                {brokers.length === 0 && <div style={{ color:"#8a9478", fontSize:12 }}>Přidej pozice s vybraným brokerem.</div>}
+              </div>
+            </div>
+          );
+        })()}
       </main>
 
       {showModal && <Modal onClose={() => setShowModal(false)} onAdd={handleAdd} loading={savingPos} />}
