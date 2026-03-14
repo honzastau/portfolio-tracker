@@ -44,10 +44,10 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwgiEW2IW7ZKwc120CcevGfmJRKHJw2Zzm3_8koOXI4iT-hIMLOiAxxqXfc2zi1PR14/exec";
 const REFRESH_INTERVAL = 60 * 1000;
 
-const CATEGORIES = ["Tech", "Dividendové", "ETF", "Krypto", "Komodity", "Jiné"];
+const CATEGORIES = ["Tech", "Dividendové", "ETF", "Krypto", "Komodity", "Dividenda", "Jiné"];
 const CAT_COLORS = {
   Tech: "#6abf00", Dividendové: "#ff6b35", ETF: "#06b6d4",
-  Krypto: "#a78bfa", Komodity: "#fbbf24", Jiné: "#94a3b8",
+  Krypto: "#a78bfa", Komodity: "#fbbf24", Dividenda: "#f0a500", Jiné: "#94a3b8",
 };
 
 const DEFAULT_BROKERS = ["Trading 212", "XTB", "Revolut"];
@@ -446,59 +446,87 @@ function App() {
     const lines = text.trim().split("\n");
     const headers = lines[0].split(",").map(h => h.replace(/"/g, "").trim());
 
-    const getCol = (row, name) => {
-      const idx = headers.findIndex(h => h === name);
-      if (idx === -1) return "";
+    // CSV parser — handles quoted fields with commas
+    const parseRow = (row) => {
       const parts = [];
       let inQ = false, cur = "";
       for (const ch of row) {
         if (ch === '"') { inQ = !inQ; }
-        else if (ch === "," && !inQ) { parts.push(cur); cur = ""; }
+        else if (ch === "," && !inQ) { parts.push(cur.trim()); cur = ""; }
         else cur += ch;
       }
-      parts.push(cur);
-      return (parts[idx] || "").replace(/"/g, "").trim();
+      parts.push(cur.trim());
+      return parts;
+    };
+
+    const getCol = (row, name) => {
+      const idx = headers.findIndex(h => h === name);
+      if (idx === -1) return "";
+      return (parseRow(row)[idx] || "").replace(/"/g, "").trim();
     };
 
     const dataRows = lines.slice(1).filter(l => l.trim());
-    const buyRows  = dataRows.filter(l => {
-      const action = getCol(l, "Action").toLowerCase();
-      return action.includes("buy");
-    });
 
     let imported = 0, failed = 0;
+    const importCounts = { buy: 0, sell: 0, dividend: 0 };
     const newPositions = [];
 
-    for (const row of buyRows) {
+    for (const row of dataRows) {
       try {
+        const action   = getCol(row, "Action").toLowerCase();
+        const isBuy    = action.includes("buy");
+        const isSell   = action.includes("sell");
+        const isDividend = action.includes("dividend");
+
+        if (!isBuy && !isSell && !isDividend) continue;
+
         const ticker    = getCol(row, "Ticker");
         const name      = getCol(row, "Name");
-        const shares    = parseFloat(getCol(row, "No. of shares"));
-        const fillPrice = parseFloat(getCol(row, "Price / share"));
-        const currency  = getCol(row, "Currency (Price / share)") || "EUR";
-        const total     = getCol(row, "Total");
         const datetime  = getCol(row, "Time");
+        const currency  = getCol(row, "Currency (Price / share)") || getCol(row, "Currency (Total)") || "EUR";
+        const total     = getCol(row, "Total");
 
-        if (!ticker || isNaN(shares) || isNaN(fillPrice)) { failed++; continue; }
+        if (!ticker) { failed++; continue; }
+
+        let shares, fillPrice, category;
+
+        if (isDividend) {
+          // Dividend: store as special entry — shares = dividend amount, price = 1
+          shares    = parseFloat(getCol(row, "Total")) || 0;
+          fillPrice = 1;
+          category  = "Dividenda";
+        } else {
+          shares    = parseFloat(getCol(row, "No. of shares"));
+          fillPrice = parseFloat(getCol(row, "Price / share"));
+          category  = "Jiné";
+          // Sell = záporný počet
+          if (isSell) shares = -Math.abs(shares);
+        }
+
+        if (isNaN(shares) || isNaN(fillPrice)) { failed++; continue; }
 
         const pos = {
           id: Math.random().toString(36).slice(2,9),
           ticker: ticker.toUpperCase(),
           name: name || ticker,
-          category: "Jiné",
+          category,
           shares,
-          avgPrice: fillPrice,
-          fillPrice,
+          avgPrice: Math.abs(fillPrice),
+          fillPrice: Math.abs(fillPrice),
           volume: total,
           currency,
           datetime,
           broker: "Trading 212",
+          txType: isBuy ? "buy" : isSell ? "sell" : "dividend",
         };
 
         const res = await apiPost({ action: "addPosition", position: pos });
         if (res.error) { failed++; continue; }
         newPositions.push(pos);
         imported++;
+        if (isBuy) importCounts.buy++;
+        else if (isSell) importCounts.sell++;
+        else if (isDividend) importCounts.dividend++;
       } catch { failed++; }
     }
 
@@ -506,7 +534,7 @@ function App() {
     setPositions(updated);
     if (updated.length > 0) await loadPrices(updated);
     setCsvImporting(false);
-    setCsvResult({ imported, failed, total: buyRows.length });
+    setCsvResult({ imported, failed, counts: importCounts });
     e.target.value = "";
   }, [positions, loadPrices]);
 
@@ -602,7 +630,7 @@ function App() {
         )}
         {csvResult && (
           <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:10, padding:"12px 16px", marginBottom:20, fontSize:12, color:"#3a6600", display:"flex", justifyContent:"space-between" }}>
-            <span>✓ Import dokončen — {csvResult.imported} transakcí přidáno{csvResult.failed > 0 ? `, ${csvResult.failed} přeskočeno` : ""}</span>
+            <span>✓ Import dokončen — {csvResult.counts.buy} nákupů, {csvResult.counts.sell} prodejů, {csvResult.counts.dividend} dividend{csvResult.failed > 0 ? ` · ${csvResult.failed} přeskočeno` : ""}</span>
             <span style={{ cursor:"pointer" }} onClick={() => setCsvResult(null)}>×</span>
           </div>
         )}
