@@ -491,6 +491,27 @@ function Modal({onClose,onAdd,loading}){
   );
 }
 
+// ── Error Boundary ────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  componentDidCatch(e, info) { console.error("APP CRASH:", e, info); }
+  render() {
+    if (this.state.error) return (
+      <div style={{padding:40,fontFamily:"'DM Mono',monospace"}}>
+        <div style={{background:"#fff0f0",border:"1px solid #fca5a5",borderRadius:12,padding:"24px 28px",maxWidth:700}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:"#e03030",marginBottom:12}}>Chyba aplikace</div>
+          <pre style={{fontSize:11,color:"#1a1f12",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>{String(this.state.error)}</pre>
+          <button onClick={()=>this.setState({error:null})} style={{marginTop:16,padding:"8px 16px",background:"#6abf00",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:12}}>
+            Zkusit znovu
+          </button>
+        </div>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────
 function App(){
   const [transactions,setTransactions] = useState([]);
@@ -741,8 +762,8 @@ function App(){
                 <thead><tr><th style={{textAlign:"left"}}>Ticker</th><th style={{textAlign:"right"}}>Cena</th><th style={{textAlign:"right"}}>Průměr</th><th style={{textAlign:"right"}}>Hodnota</th><th style={{textAlign:"right"}}>P&L</th></tr></thead>
                 <tbody>
                   {sortedOpen.slice(0,6).map(p=>{
-                    const price=prices[p.ticker]?.current??p.avgPrice;
-                    const val=p.shares*price, pnl=val-p.totalCost, pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
+                    const priceCZK=getPriceCZK(p);
+                    const val=getValCZK(p), pnl=val-p.totalCost, pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
                     return(<tr key={p.ticker} className="thr">
                       <td><div style={{fontWeight:500}}>{p.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{p.name}</div></td>
                       <td style={{textAlign:"right"}}>{fmt(priceCZK)}</td>
@@ -786,10 +807,10 @@ function App(){
             <thead><tr><th style={{textAlign:"left"}}>Ticker</th><th style={{textAlign:"right"}}>Akt. cena</th><th style={{textAlign:"right"}}>Prům. nákup</th><th style={{textAlign:"right"}}>Kusů</th><th style={{textAlign:"right"}}>Hodnota</th><th style={{textAlign:"right"}}>P&L dnes</th><th style={{textAlign:"right"}}>P&L celkem</th><th style={{textAlign:"right"}}>Podíl</th></tr></thead>
             <tbody>
               {sortedOpen.map(p=>{
-                const price=prices[p.ticker]?.current??p.avgPrice;
+                const priceCZK=getPriceCZK(p);
                 const chPct=prices[p.ticker]?.changePct??null,chAbs=prices[p.ticker]?.change??null;
-                const val=p.shares*price,pnl=val-p.totalCost,pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
-                const dayPnl=chAbs!=null?chAbs*p.shares:null;
+                const val=getValCZK(p),pnl=val-p.totalCost,pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
+                const dayPnl=chAbs!=null?toCZK(chAbs*Number(p.shares),p.currency):null;
                 const share=s.totalValue>0?(val/s.totalValue)*100:0;
                 return(<tr key={p.ticker} className="thr">
                   <td><div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -954,7 +975,7 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
 </script>
 </body>
 </html>
