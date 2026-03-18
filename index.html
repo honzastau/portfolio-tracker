@@ -233,7 +233,15 @@ function Modal({onClose,onAdd,loading}){
   const lookupName=async()=>{
     const t=form.ticker.trim().toUpperCase();if(!t||form.nameLoaded)return;
     setForm(f=>({...f,nameLoading:true}));
-    try{const r=await fetch(API+"?"+new URLSearchParams({action:"getCompanyName",ticker:t}));const d=await r.json();setForm(f=>({...f,nameLoading:false,nameLoaded:true,name:d.name||f.name,currency:d.currency||f.currency}));}
+    try{
+      const r=await fetch(API+"?"+new URLSearchParams({action:"getCompanyName",ticker:t}));
+      const d=await r.json();
+      setForm(f=>({...f,nameLoading:false,nameLoaded:true,
+        name:d.name||f.name,
+        currency:d.currency||f.currency,
+        category:d.category||f.category,
+      }));
+    }
     catch{setForm(f=>({...f,nameLoading:false}));}
   };
   const CURS=["CZK","USD","EUR","GBP","Jiná…"];
@@ -398,6 +406,23 @@ function App(){
       const txs=parseCSV(text);
       const counts={buy:0,sell:0,dividend:0};
       txs.forEach(t=>counts[t.txType]=(counts[t.txType]||0)+1);
+
+      // Batch category lookup for unique tickers (skip dividends)
+      const uniqueTickers=[...new Set(txs.filter(t=>t.txType!=="dividend").map(t=>t.ticker))];
+      const categoryMap={};
+      await Promise.all(uniqueTickers.map(async ticker=>{
+        try{
+          const r=await fetch(API+"?"+new URLSearchParams({action:"getCompanyName",ticker}));
+          const d=await r.json();
+          if(d.category) categoryMap[ticker]=d.category;
+          if(d.name)     categoryMap[ticker+"_name"]=d.name;
+        }catch{}
+      }));
+      // Apply looked-up categories and names
+      txs.forEach(tx=>{
+        if(categoryMap[tx.ticker])     tx.category=categoryMap[tx.ticker];
+        if(categoryMap[tx.ticker+"_name"]&&tx.name===tx.ticker) tx.name=categoryMap[tx.ticker+"_name"];
+      });
 
       // Save all to Apps Script in batch
       const nonDiv=txs.filter(t=>t.txType!=="dividend");
