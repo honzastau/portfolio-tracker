@@ -61,64 +61,68 @@ const apiPost  = async b => (await fetch(API,{method:"POST",body:JSON.stringify(
 // ── Core engine: compute portfolio state from raw transactions ─────────────
 // Returns: { open, closed, dividends, history }
 function computePortfolio(transactions) {
-  // Sort chronologically
   const txs = [...transactions].sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
 
-  const positions = {}; // ticker → { shares, totalCost, avgPrice, name, category, broker, firstBuy }
-  const closed    = []; // fully closed positions with realized P&L
+  const positions = {};
+  const closed    = [];
   const dividends = txs.filter(t=>t.txType==="dividend");
-  const history   = []; // { date, totalCost, totalValue (same as cost here, updated later) }
+  const history   = [];
 
   for (const tx of txs) {
     if (tx.txType === "dividend") continue;
 
-    const ticker = tx.ticker;
-    const shares = Number(tx.shares);  // negative for sell
-    const price  = Number(tx.fillPrice);
-    const isBuy  = shares > 0;
+    const ticker    = tx.ticker;
+    const shares    = Number(tx.shares);   // záporné u prodeje
+    const fillPrice = Number(tx.fillPrice);
+    const isBuy     = shares > 0;
+
+    // Použij objem v CZK (Total z CSV) jako nákladovou základnu
+    // Pokud není k dispozici, použij fillPrice (může být v cizí měně)
+    const volCZK    = tx.volume && Number(tx.volume) > 0 ? Number(tx.volume) : null;
+    const costCZK   = volCZK !== null ? volCZK : Math.abs(shares) * fillPrice;
 
     if (!positions[ticker]) {
-      positions[ticker] = {ticker, name:tx.name||ticker, category:tx.category||"Jiné",
+      positions[ticker] = {
+        ticker, name:tx.name||ticker, category:tx.category||"Jiné",
         broker:tx.broker||"", shares:0, totalCost:0, avgPrice:0,
-        firstBuy:tx.datetime, transactions:[]};
+        avgPriceCZK:0, currency:tx.currency||"EUR", firstBuy:tx.datetime,
+      };
     }
     const pos = positions[ticker];
-    pos.transactions.push(tx);
+    pos.currency = tx.currency || pos.currency;
 
     if (isBuy) {
-      // Weighted average cost
-      pos.totalCost += shares * price;
-      pos.shares    += shares;
-      pos.avgPrice   = pos.totalCost / pos.shares;
+      pos.totalCost  += costCZK;               // v CZK
+      pos.shares     += shares;
+      pos.avgPrice    = fillPrice;              // v původní měně (pro display)
+      pos.avgPriceCZK = pos.totalCost / pos.shares; // v CZK (pro P&L výpočty)
     } else {
-      // Sell
-      const sellShares = Math.abs(shares);
-      const realizedPnl = sellShares * (price - pos.avgPrice);
-      pos.shares    -= sellShares;
-      pos.totalCost  = pos.shares > 0.0001 ? pos.avgPrice * pos.shares : 0;
+      const sellShares  = Math.abs(shares);
+      const sellCZK     = volCZK !== null ? volCZK : sellShares * fillPrice;
+      const costOfSold  = pos.avgPriceCZK * sellShares;
+      const realizedPnl = sellCZK - costOfSold;
 
-      // If fully closed
+      pos.shares    -= sellShares;
+      pos.totalCost  = pos.shares > 0.0001 ? pos.avgPriceCZK * pos.shares : 0;
+
       if (pos.shares <= 0.0001) {
         closed.push({
           ticker, name:pos.name, category:pos.category, broker:pos.broker,
-          closedAt:tx.datetime, avgBuyPrice:pos.avgPrice,
-          sellPrice:price, realizedPnl,
-          realizedPct: pos.avgPrice > 0 ? (realizedPnl / (sellShares * pos.avgPrice)) * 100 : 0,
+          closedAt:tx.datetime, avgBuyPrice:pos.avgPriceCZK,
+          sellPrice:sellCZK / sellShares, realizedPnl,
+          realizedPct: costOfSold > 0 ? (realizedPnl / costOfSold) * 100 : 0,
         });
         delete positions[ticker];
       }
     }
 
-    // Snapshot for history chart
     const totalCost = Object.values(positions).reduce((s,p)=>s+p.totalCost,0);
-    history.push({ date:tx.datetime, totalCost, ticker, action:isBuy?"buy":"sell" });
+    history.push({ date:tx.datetime, totalCost });
   }
 
   return {
     open: Object.values(positions).filter(p=>p.shares>0.0001),
-    closed,
-    dividends,
-    history,
+    closed, dividends, history,
   };
 }
 
@@ -131,42 +135,179 @@ const Sparkline = ({up}) => (
 );
 
 // ── Portfolio history chart ────────────────────────────────────────────────
-function HistoryChart({history, prices, open}) {
-  if (!history.length) return <div style={{height:160,display:"flex",alignItems:"center",justifyContent:"center",color:"#8a9478",fontSize:12}}>Importujte CSV pro zobrazení vývoje</div>;
+function HistoryChart({history, prices, open, getValCZK}) {
+  const [period, setPeriod]   = useState("MAX");
+  const [tooltip, setTooltip] = useState(null);
+  const svgRef = useRef(null);
 
-  // Build cost basis over time
-  const points = history.map(h=>({date:new Date(h.date),val:h.totalCost}));
-  // Add current value as last point
-  const currentVal = open.reduce((s,p)=>s+p.shares*(prices[p.ticker]?.current??p.avgPrice),0);
-  if (currentVal>0) points.push({date:new Date(),val:currentVal});
+  const PERIODS = ["1M","3M","6M","1R","MAX"];
 
-  const W=600,H=150;
-  const dates = points.map(p=>p.date.getTime());
-  const vals  = points.map(p=>p.val);
-  const minD=Math.min(...dates),maxD=Math.max(...dates);
-  const minV=Math.min(...vals)*0.97,maxV=Math.max(...vals)*1.03;
-  const toX = d => ((d-minD)/(maxD-minD||1))*W;
-  const toY = v => H-((v-minV)/(maxV-minV||1))*(H-20)-10;
+  // Build timeline points from history + current value
+  const allPoints = useMemo(() => {
+    if (!history.length) return [];
+    const pts = history.map(h => ({ date: new Date(h.date), val: h.totalCost }));
+    const currentVal = open.reduce((s,p) => s + getValCZK(p), 0);
+    if (currentVal > 0) pts.push({ date: new Date(), val: currentVal });
+    // Deduplicate by day — keep last value per day
+    const byDay = {};
+    pts.forEach(p => {
+      const key = p.date.toISOString().slice(0,10);
+      byDay[key] = p;
+    });
+    return Object.values(byDay).sort((a,b) => a.date - b.date);
+  }, [history, open, prices]);
 
-  const pathD = points.map((p,i)=>`${i===0?"M":"L"}${toX(p.date.getTime())},${toY(p.val)}`).join(" ");
-  const areaD = pathD+` L${W},${H} L0,${H}Z`;
+  const filteredPoints = useMemo(() => {
+    if (!allPoints.length) return [];
+    const now = new Date();
+    const cutoff = {
+      "1M": new Date(now - 30*86400000),
+      "3M": new Date(now - 90*86400000),
+      "6M": new Date(now - 180*86400000),
+      "1R": new Date(now - 365*86400000),
+      "MAX": new Date(0),
+    }[period];
+    const filtered = allPoints.filter(p => p.date >= cutoff);
+    return filtered.length >= 2 ? filtered : allPoints;
+  }, [allPoints, period]);
 
-  const lastUp = vals[vals.length-1] >= vals[0];
-  const color  = lastUp?"#6abf00":"#e03030";
+  if (!filteredPoints.length) return (
+    <div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",color:"#8a9478",fontSize:12}}>
+      Importujte CSV pro zobrazení vývoje
+    </div>
+  );
+
+  const W=600, H=180, PAD={l:10,r:10,t:10,b:30};
+  const IW=W-PAD.l-PAD.r, IH=H-PAD.t-PAD.b;
+
+  const dates = filteredPoints.map(p => p.date.getTime());
+  const vals  = filteredPoints.map(p => p.val);
+  const minD=Math.min(...dates), maxD=Math.max(...dates);
+  const minV=Math.min(...vals), maxV=Math.max(...vals);
+  const padV=(maxV-minV)*0.08||maxV*0.05;
+
+  const toX = d => PAD.l + ((d-minD)/(maxD-minD||1))*IW;
+  const toY = v => PAD.t + IH - ((v-(minV-padV))/((maxV+padV)-(minV-padV)||1))*IH;
+
+  const pathD = filteredPoints.map((p,i) => `${i===0?"M":"L"}${toX(p.date.getTime()).toFixed(1)},${toY(p.val).toFixed(1)}`).join(" ");
+  const areaD = pathD + ` L${toX(dates[dates.length-1])},${PAD.t+IH} L${PAD.l},${PAD.t+IH}Z`;
+
+  const lastVal  = vals[vals.length-1];
+  const firstVal = vals[0];
+  const up       = lastVal >= firstVal;
+  const color    = up ? "#6abf00" : "#e03030";
+  const pct      = firstVal > 0 ? ((lastVal-firstVal)/firstVal)*100 : 0;
+
+  // Y axis labels
+  const yLabels = [0, 0.25, 0.5, 0.75, 1].map(t => ({
+    y: PAD.t + IH*(1-t),
+    val: (minV-padV) + ((maxV+padV)-(minV-padV))*t,
+  }));
+
+  // X axis labels — pick ~4 evenly spaced dates
+  const xLabels = (() => {
+    const n = Math.min(4, filteredPoints.length);
+    const indices = Array.from({length:n}, (_,i) => Math.round(i*(filteredPoints.length-1)/(n-1||1)));
+    return [...new Set(indices)].map(i => filteredPoints[i]);
+  })();
+
+  const handleMouseMove = (e) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const mx   = (e.clientX - rect.left) / rect.width * W;
+    // Find closest point
+    let best = 0, bestDist = Infinity;
+    filteredPoints.forEach((p,i) => {
+      const d = Math.abs(toX(p.date.getTime()) - mx);
+      if (d < bestDist) { bestDist=d; best=i; }
+    });
+    const p = filteredPoints[best];
+    setTooltip({ x: toX(p.date.getTime()), y: toY(p.val), val: p.val, date: p.date });
+  };
+
+  const fmtShort = n => new Intl.NumberFormat("cs-CZ",{style:"currency",currency:"CZK",notation:"compact",maximumFractionDigits:0}).format(n);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}}>
-      <defs>
-        <linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.15"/>
-          <stop offset="100%" stopColor={color} stopOpacity="0"/>
-        </linearGradient>
-      </defs>
-      {[.25,.5,.75].map(t=><line key={t} x1="0" y1={H*t} x2={W} y2={H*t} stroke="#dde3d4" strokeWidth="1"/>)}
-      <path d={areaD} fill="url(#hg)"/>
-      <path d={pathD} stroke={color} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx={toX(dates[dates.length-1])} cy={toY(vals[vals.length-1])} r="5" fill={color}/>
-    </svg>
+    <div>
+      {/* Period selector + current value */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{display:"flex",gap:4}}>
+          {PERIODS.map(p=>(
+            <button key={p} onClick={()=>setPeriod(p)} style={{padding:"4px 12px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:11,background:period===p?"#eef1e8":"transparent",color:period===p?"#1a1f12":"#8a9478",fontWeight:period===p?"500":"400"}}>
+              {p}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12,fontSize:12}}>
+          <span style={{color:up?"#2ea84e":"#e03030",fontWeight:500}}>{up?"+":""}{pct.toFixed(2)} %</span>
+          <span style={{color:"#8a9478"}}>{fmtShort(firstVal)} → <span style={{color:"#1a1f12",fontWeight:500}}>{fmtShort(lastVal)}</span></span>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div style={{position:"relative"}}>
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:200,cursor:"crosshair"}}
+          onMouseMove={handleMouseMove} onMouseLeave={()=>setTooltip(null)}>
+          <defs>
+            <linearGradient id="hg2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.18"/>
+              <stop offset="100%" stopColor={color} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+
+          {/* Y grid lines + labels */}
+          {yLabels.map((l,i)=>(
+            <g key={i}>
+              <line x1={PAD.l} y1={l.y} x2={W-PAD.r} y2={l.y} stroke="#eef1e8" strokeWidth="1"/>
+              <text x={PAD.l+4} y={l.y-4} fontSize="8" fill="#8a9478" fontFamily="'DM Mono',monospace">{fmtShort(l.val)}</text>
+            </g>
+          ))}
+
+          {/* Area + line */}
+          <path d={areaD} fill="url(#hg2)"/>
+          <path d={pathD} stroke={color} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+
+          {/* X axis labels */}
+          {xLabels.map((p,i)=>(
+            <text key={i} x={toX(p.date.getTime())} y={H-6} textAnchor="middle" fontSize="8" fill="#8a9478" fontFamily="'DM Mono',monospace">
+              {p.date.toLocaleDateString("cs-CZ",{day:"numeric",month:"short",year:period==="MAX"||period==="1R"?"2-digit":undefined})}
+            </text>
+          ))}
+
+          {/* Tooltip vertical line + dot */}
+          {tooltip && (
+            <g>
+              <line x1={tooltip.x} y1={PAD.t} x2={tooltip.x} y2={PAD.t+IH} stroke={color} strokeWidth="1" strokeDasharray="4 3" opacity="0.6"/>
+              <circle cx={tooltip.x} cy={tooltip.y} r="5" fill={color} stroke="#fff" strokeWidth="2"/>
+            </g>
+          )}
+        </svg>
+
+        {/* Tooltip box */}
+        {tooltip && (
+          <div style={{
+            position:"absolute",
+            left: tooltip.x/W*100 > 70 ? "auto" : `${tooltip.x/W*100+2}%`,
+            right: tooltip.x/W*100 > 70 ? `${(1-tooltip.x/W)*100+2}%` : "auto",
+            top: 10, pointerEvents:"none",
+            background:"#fff", border:"1px solid #dde3d4", borderRadius:10,
+            padding:"10px 14px", boxShadow:"0 4px 20px rgba(15,23,42,.1)",
+            fontFamily:"'DM Mono',monospace", minWidth:160,
+          }}>
+            <div style={{fontSize:10,color:"#8a9478",marginBottom:4}}>
+              {tooltip.date.toLocaleDateString("cs-CZ",{day:"numeric",month:"long",year:"numeric"})}
+            </div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:"#1a1f12"}}>
+              {new Intl.NumberFormat("cs-CZ",{style:"currency",currency:"CZK",maximumFractionDigits:0}).format(tooltip.val)}
+            </div>
+            <div style={{fontSize:10,marginTop:4,color:tooltip.val>=firstVal?"#2ea84e":"#e03030"}}>
+              {tooltip.val>=firstVal?"+":""}{((tooltip.val-firstVal)/firstVal*100).toFixed(2)} % od začátku
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -206,14 +347,22 @@ function parseCSV(text) {
     const dt     = col(parts,"Time");
     const cur    = col(parts,"Currency (Price / share)")||col(parts,"Currency (Total)")||"EUR";
 
-    if (action.includes("buy")){
+    if (action.includes("buy")||action.includes("sell")){
       const shares=parseFloat(col(parts,"No. of shares")); if(isNaN(shares)) continue;
       const fill=parseFloat(col(parts,"Price / share"));   if(isNaN(fill)) continue;
-      txs.push({id:uid(),ticker:ticker.toUpperCase(),name,shares,fillPrice:fill,volume:col(parts,"Total"),currency:cur,datetime:dt,broker:"Trading 212",txType:"buy",category:"Jiné"});
-    } else if (action.includes("sell")){
-      const shares=parseFloat(col(parts,"No. of shares")); if(isNaN(shares)) continue;
-      const fill=parseFloat(col(parts,"Price / share"));   if(isNaN(fill)) continue;
-      txs.push({id:uid(),ticker:ticker.toUpperCase(),name,shares:-Math.abs(shares),fillPrice:fill,volume:col(parts,"Total"),currency:cur,datetime:dt,broker:"Trading 212",txType:"sell",category:"Jiné"});
+      // Exchange rate from CSV: T212 stores it as foreign/CZK (inverted)
+      // So 1 CZK = rate foreign → 1 foreign = 1/rate CZK
+      const rateInv = parseFloat(col(parts,"Exchange rate")) || 0;
+      const rateCZK = rateInv > 0 ? 1/rateInv : 1; // CZK per 1 unit of foreign currency
+      // Use Total column (already in CZK) as the authoritative volume
+      const totalCZK = parseFloat(col(parts,"Total")) || Math.abs(shares)*fill*rateCZK;
+      const isSell = action.includes("sell");
+      txs.push({id:uid(),ticker:ticker.toUpperCase(),name,
+        shares:isSell?-Math.abs(shares):shares,
+        fillPrice:fill, volume:String(totalCZK),
+        currency:cur, exchangeRate:rateCZK,
+        datetime:dt, broker:"Trading 212",
+        txType:isSell?"sell":"buy", category:"Jiné"});
     } else if (action.includes("dividend")){
       const amount=parseFloat(col(parts,"Total"))||0;
       txs.push({id:uid(),ticker:ticker.toUpperCase(),name,shares:0,fillPrice:0,volume:String(amount),amount,currency:col(parts,"Currency (Total)")||cur,datetime:dt,broker:"Trading 212",txType:"dividend",category:"Dividenda"});
@@ -310,6 +459,19 @@ function Modal({onClose,onAdd,loading}){
           {form.customBroker&&<input value={form.broker} onChange={e=>setForm(f=>({...f,broker:e.target.value}))} style={{...IS,marginTop:8}} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/>}
         </div>
 
+        {/* Kurz ke dni transakce — jen pokud měna není CZK */}
+        {form.currency && form.currency !== "CZK" && (
+          <div style={{marginBottom:14}}>
+            <label style={LS}>Kurz ke dni transakce ({form.currency}/CZK)</label>
+            <input type="number" value={form.exchangeRate} onChange={set("exchangeRate")} style={IS}
+              onFocus={e=>e.target.style.borderColor="#6abf00"}
+              onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
+            <div style={{fontSize:10,color:"#8a9478",marginTop:4}}>
+              Objem v CZK: {form.shares&&form.fillPrice&&form.exchangeRate ? fmt(parseFloat(form.shares)*parseFloat(form.fillPrice)*parseFloat(form.exchangeRate)) : "—"}
+            </div>
+          </div>
+        )}
+
         {form.shares&&form.fillPrice&&<div style={{background:"#f4f6f0",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:11,color:"#8a9478",display:"flex",justifyContent:"space-between"}}><span>{form.shares} ks × {form.fillPrice} {form.currency}</span><span style={{color:"#1a1f12",fontWeight:500}}>= {form.volume?parseFloat(form.volume).toLocaleString("cs-CZ"):"—"} {form.currency}</span></div>}
 
         <button onClick={()=>onAdd(form)} disabled={!valid||loading} style={{width:"100%",padding:13,background:valid&&!loading?"#6abf00":"#eef1e8",border:"none",borderRadius:12,fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:500,color:valid&&!loading?"#fff":"#8a9478",cursor:valid&&!loading?"pointer":"not-allowed"}}>
@@ -328,6 +490,7 @@ function App(){
   const [loadingPrices,setLoadingPrices] = useState(false);
   const [saving,setSaving]             = useState(false);
   const [error,setError]               = useState(null);
+  const [fx,setFx]                     = useState({USD:25,EUR:25}); // fallback rates CZK/unit
   const [showModal,setShowModal]       = useState(false);
   const [tab,setTab]                   = useState("přehled");
   const [lastUpdated,setLastUpdated]   = useState(null);
@@ -353,8 +516,12 @@ function App(){
     setLoadingPrices(true);
     try{
       const tickers=[...new Set(open.map(p=>p.ticker))].join(",");
-      const d=await apiFetch({action:"getPrices",tickers});
-      if(d.prices){setPrices(d.prices);setLastUpdated(new Date());}
+      const [priceData, fxData] = await Promise.all([
+        apiFetch({action:"getPrices",tickers}),
+        apiFetch({action:"getFxRates"}),
+      ]);
+      if(priceData.prices){setPrices(priceData.prices);setLastUpdated(new Date());}
+      if(fxData.rates){setFx(fxData.rates);}
     }catch(e){console.error(e);}
     finally{setLoadingPrices(false);}
   },[transactions]);
@@ -373,9 +540,16 @@ function App(){
   const handleAdd=useCallback(async(form)=>{
     setSaving(true);
     try{
+      const sharesNum = form.txType==="sell" ? -Math.abs(parseFloat(form.shares)) : parseFloat(form.shares);
+      const fillNum   = parseFloat(form.fillPrice);
+      const rate      = parseFloat(form.exchangeRate) || 1;
+      // Volume in CZK: if currency is CZK use fillPrice directly, otherwise multiply by exchange rate
+      const volumeCZK = form.currency === "CZK"
+        ? Math.abs(sharesNum) * fillNum
+        : Math.abs(sharesNum) * fillNum * rate;
       const tx={id:uid(),ticker:form.ticker.toUpperCase().trim(),name:form.name||form.ticker,category:form.category,
-        shares:form.txType==="sell"?-Math.abs(parseFloat(form.shares)):parseFloat(form.shares),
-        fillPrice:parseFloat(form.fillPrice),volume:form.volume,currency:form.currency,
+        shares:sharesNum, fillPrice:fillNum, volume:String(volumeCZK.toFixed(2)),
+        currency:form.currency, exchangeRate:rate,
         datetime:form.datetime,broker:form.broker,txType:form.txType};
       const res=await apiPost({action:"addTransaction",tx});
       if(res.error) throw new Error(res.error);
@@ -443,18 +617,36 @@ function App(){
   const portfolio = useMemo(()=>computePortfolio(transactions),[transactions]);
   const {open,closed,dividends,history} = portfolio;
 
+  // Převod ceny tickeru na CZK
+  const toCZK = useCallback((price, currency) => {
+    if (!price) return 0;
+    const cur = (currency||"USD").toUpperCase();
+    if (cur === "CZK") return price;
+    return price * (fx[cur] || fx["USD"] || 25);
+  }, [fx]);
+
   const stats = useMemo(()=>{
-    const totalValue = open.reduce((s,p)=>s+p.shares*(prices[p.ticker]?.current??p.avgPrice),0);
-    const totalCost  = open.reduce((s,p)=>s+p.totalCost,0);
-    const unrealPnl  = totalValue-totalCost;
-    const unrealPct  = totalCost>0?(unrealPnl/totalCost)*100:0;
-    const realPnl    = closed.reduce((s,c)=>s+c.realizedPnl,0);
-    const totalDiv   = dividends.reduce((s,d)=>s+Number(d.amount||0),0);
+    const totalValue = open.reduce((s,p)=>{
+      const priceNative = prices[p.ticker]?.current ?? 0;
+      const valueCZK    = priceNative > 0 ? toCZK(priceNative, p.currency) * p.shares : p.totalCost;
+      return s + valueCZK;
+    }, 0);
+    const totalCost  = open.reduce((s,p)=>s+p.totalCost, 0);
+    const unrealPnl  = totalValue - totalCost;
+    const unrealPct  = totalCost > 0 ? (unrealPnl/totalCost)*100 : 0;
+    const realPnl    = closed.reduce((s,c)=>s+c.realizedPnl, 0);
+    const totalDiv   = dividends.reduce((s,d)=>s+Number(d.amount||0), 0);
     const totalReturn= unrealPnl+realPnl+totalDiv;
     return {totalValue,totalCost,unrealPnl,unrealPct,realPnl,totalDiv,totalReturn};
-  },[open,closed,dividends,prices]);
+  },[open,closed,dividends,prices,toCZK]);
 
-  const sortedOpen=[...open].sort((a,b)=>b.shares*(prices[b.ticker]?.current??b.avgPrice)-a.shares*(prices[a.ticker]?.current??a.avgPrice));
+  const getPriceCZK = (p) => {
+    const native = prices[p.ticker]?.current;
+    if (native && native > 0) return toCZK(native, p.currency);
+    return p.avgPriceCZK || p.avgPrice;
+  };
+  const getValCZK = (p) => p.shares * getPriceCZK(p);
+  const sortedOpen=[...open].sort((a,b)=>getValCZK(b)-getValCZK(a));
 
   if(loading) return(
     <div style={{minHeight:"100vh",background:"#f4f6f0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
@@ -522,7 +714,7 @@ function App(){
               </div>
               <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700}} className={s.unrealPnl>=0?"up":"down"}>{fmt(s.totalValue)}</div>
             </div>
-            <HistoryChart history={history} prices={prices} open={open}/>
+            <HistoryChart history={history} prices={prices} open={open} getValCZK={getValCZK}/>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:10,color:"#8a9478"}}>
               <span>{history.length?fmtDate(history[0].date):""}</span>
               <span style={{color:"#6abf00"}}>Dnes</span>
@@ -541,8 +733,8 @@ function App(){
                     const val=p.shares*price, pnl=val-p.totalCost, pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
                     return(<tr key={p.ticker} className="thr">
                       <td><div style={{fontWeight:500}}>{p.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{p.name}</div></td>
-                      <td style={{textAlign:"right"}}>{fmt(price)}</td>
-                      <td style={{textAlign:"right",color:"#8a9478"}}>{fmt(p.avgPrice)}</td>
+                      <td style={{textAlign:"right"}}>{fmt(priceCZK)}</td>
+                      <td style={{textAlign:"right",color:"#8a9478"}}>{fmt(p.avgPriceCZK||p.avgPrice)}</td>
                       <td style={{textAlign:"right",fontWeight:500}}>{fmt(val)}</td>
                       <td style={{textAlign:"right"}}><div className={pnlPct>=0?"up":"down"}>{fmtPct(pnlPct)}</div><div style={{fontSize:10,color:pnl>=0?"#86efac":"#fca5a5"}}>{fmt(pnl)}</div></td>
                     </tr>);
@@ -592,8 +784,8 @@ function App(){
                     <div style={{width:32,height:32,borderRadius:8,background:`${CAT_COLORS[p.category]||"#94a3b8"}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:500,color:CAT_COLORS[p.category]||"#94a3b8"}}>{p.ticker.slice(0,3)}</div>
                     <div><div style={{fontWeight:500}}>{p.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{p.name}</div></div>
                   </div></td>
-                  <td style={{textAlign:"right"}}>{fmt(price)}</td>
-                  <td style={{textAlign:"right",color:"#8a9478"}}>{fmt(p.avgPrice)}</td>
+                  <td style={{textAlign:"right"}}>{fmt(priceCZK)}</td>
+                  <td style={{textAlign:"right",color:"#8a9478"}}>{fmt(p.avgPriceCZK||p.avgPrice)}</td>
                   <td style={{textAlign:"right"}}>{fmtN(p.shares)}</td>
                   <td style={{textAlign:"right",fontWeight:500}}>{fmt(val)}</td>
                   <td style={{textAlign:"right"}}><div className={chPct==null?"":chPct>=0?"up":"down"}>{fmtPct(chPct)}</div>{dayPnl!=null&&<div style={{fontSize:10,color:dayPnl>=0?"#86efac":"#fca5a5"}}>{fmt(dayPnl)}</div>}</td>
