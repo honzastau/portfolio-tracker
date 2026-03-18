@@ -9,887 +9,718 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #f4f6f0; font-family: 'DM Mono', monospace; }
-  .layout { display: grid; grid-template-columns: 64px 1fr; min-height: 100vh; }
-  .sidebar { background: #fff; border-right: 1px solid #dde3d4; display: flex; flex-direction: column; align-items: center; padding: 24px 0; gap: 32px; position: sticky; top: 0; height: 100vh; }
-  .nav-item { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; color: #8a9478; font-size: 18px; border: none; background: none; }
-  .nav-item:hover { background: #eef1e8; color: #1a1f12; }
-  .nav-item.active { background: #6abf00; color: #fff; }
-  .card { background: #fff; border: 1px solid #dde3d4; border-radius: 14px; padding: 22px; position: relative; overflow: hidden; animation: fadeUp 0.5s ease both; }
-  .card::before { content: ''; position: absolute; top: -1px; left: 20px; right: 20px; height: 2px; background: linear-gradient(90deg, transparent, #6abf00, transparent); opacity: 0; transition: opacity 0.3s; }
-  .card:hover::before { opacity: 1; }
-  .up { color: #2ea84e; } .down { color: #e03030; }
-  .sort-btn { background: none; border: 1px solid #dde3d4; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; padding: 5px 12px; border-radius: 20px; color: #8a9478; transition: all 0.15s; text-transform: uppercase; }
-  .sort-btn.active { background: #f0fdf4; border-color: #6abf00; color: #3a6600; }
-  .pos-row:hover td { background: #fafcf7; }
-  .del-btn { opacity: 0; transition: opacity 0.15s; }
-  .pos-row:hover .del-btn { opacity: 1; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: #dde3d4; border-radius: 3px; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f4f6f0;font-family:'DM Mono',monospace;color:#1a1f12}
+  .layout{display:grid;grid-template-columns:64px 1fr;min-height:100vh}
+  .sidebar{background:#fff;border-right:1px solid #dde3d4;display:flex;flex-direction:column;align-items:center;padding:24px 0;gap:8px;position:sticky;top:0;height:100vh}
+  .nav-item{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;color:#8a9478;font-size:17px;border:none;background:none}
+  .nav-item:hover{background:#eef1e8;color:#1a1f12}
+  .nav-item.active{background:#6abf00;color:#fff}
+  .card{background:#fff;border:1px solid #dde3d4;border-radius:14px;padding:22px;position:relative;overflow:hidden;animation:fadeUp .5s ease both}
+  .card::before{content:'';position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#6abf00,transparent);opacity:0;transition:opacity .3s}
+  .card:hover::before{opacity:1}
+  .up{color:#2ea84e}.down{color:#e03030}
+  .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px}
+  .tag-buy{background:#f0fdf4;color:#3a6600}
+  .tag-sell{background:#fff0f0;color:#e03030}
+  .tag-div{background:#fffbeb;color:#92400e}
+  .btn{border:none;border-radius:10px;padding:9px 20px;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;cursor:pointer;letter-spacing:.5px}
+  .btn-primary{background:#6abf00;color:#fff}
+  .btn-outline{background:#fff;color:#6abf00;border:1.5px solid #6abf00}
+  .thr:hover td{background:#fafcf7}
+  .del-btn{opacity:0;transition:opacity .15s}
+  .thr:hover .del-btn{opacity:1}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#dde3d4;border-radius:3px}
+  th{font-size:9px;letter-spacing:1.5px;color:#8a9478;text-transform:uppercase;padding-bottom:12px;border-bottom:1px solid #dde3d4;white-space:nowrap;font-weight:400}
+  td{padding:11px 0;font-size:12px;border-bottom:1px solid #eef1e8}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useCallback, useMemo, useRef } = React;
+const {useState,useEffect,useCallback,useMemo,useRef} = React;
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwgiEW2IW7ZKwc120CcevGfmJRKHJw2Zzm3_8koOXI4iT-hIMLOiAxxqXfc2zi1PR14/exec";
-const REFRESH_INTERVAL = 60 * 1000;
+const API = "https://script.google.com/macros/s/AKfycbwgiEW2IW7ZKwc120CcevGfmJRKHJw2Zzm3_8koOXI4iT-hIMLOiAxxqXfc2zi1PR14/exec";
+const REFRESH = 60000;
+const CAT_COLORS = {Tech:"#6abf00",Dividendové:"#ff6b35",ETF:"#06b6d4",Krypto:"#a78bfa",Komodity:"#fbbf24",Jiné:"#94a3b8"};
+const BROKERS = ["Trading 212","XTB","Revolut"];
+const BROKER_COLORS = {"Trading 212":"#6abf00","XTB":"#ff6b35","Revolut":"#06b6d4"};
 
-const CATEGORIES = ["Tech", "Dividendové", "ETF", "Krypto", "Komodity", "Jiné"];
-const CAT_COLORS  = { Tech:"#6abf00", Dividendové:"#ff6b35", ETF:"#06b6d4", Krypto:"#a78bfa", Komodity:"#fbbf24", Jiné:"#94a3b8" };
-const DEFAULT_BROKERS = ["Trading 212","XTB","Revolut"];
-const BROKER_COLORS   = { "Trading 212":"#6abf00", "XTB":"#ff6b35", "Revolut":"#06b6d4" };
-
-// ── API ───────────────────────────────────────────────────────────────────────
-async function apiFetch(params) {
-  const res = await fetch(APPS_SCRIPT_URL + "?" + new URLSearchParams(params));
-  return res.json();
-}
-async function apiPost(body) {
-  const res = await fetch(APPS_SCRIPT_URL, { method:"POST", body:JSON.stringify(body) });
-  return res.json();
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Formatters ─────────────────────────────────────────────────────────────
 const fmt    = n => new Intl.NumberFormat("cs-CZ",{style:"currency",currency:"CZK",maximumFractionDigits:0}).format(n??0);
-const fmtN   = n => new Intl.NumberFormat("cs-CZ",{maximumFractionDigits:2}).format(n??0);
-const fmtPct = n => n==null ? "—" : (n>=0?"+":"")+n.toFixed(2)+" %";
+const fmtN   = n => new Intl.NumberFormat("cs-CZ",{maximumFractionDigits:4}).format(n??0);
+const fmtPct = n => n==null?"—":(n>=0?"+":"")+n.toFixed(2)+" %";
+const fmtDate= s => s?new Date(s).toLocaleDateString("cs-CZ"):"";
 const uid    = () => Math.random().toString(36).slice(2,9);
 
-// ── Agregace transakcí na pozice (vážený průměr) ─────────────────────────────
-function aggregatePositions(transactions) {
-  const map = {};
-  // Sort by datetime ascending
-  const sorted = [...transactions].sort((a,b) => new Date(a.datetime||0) - new Date(b.datetime||0));
+// ── API ────────────────────────────────────────────────────────────────────
+const apiFetch = async p => (await fetch(API+"?"+new URLSearchParams(p))).json();
+const apiPost  = async b => (await fetch(API,{method:"POST",body:JSON.stringify(b)})).json();
 
-  sorted.forEach(tx => {
-    const t = tx.ticker;
-    if (!map[t]) map[t] = { ticker:t, name:tx.name, category:tx.category||"Jiné", shares:0, totalCost:0, avgPrice:0, broker:tx.broker||"", transactions:[] };
-    const pos = map[t];
-    pos.transactions.push(tx);
-    const shares = Number(tx.shares);
+// ── Core engine: compute portfolio state from raw transactions ─────────────
+// Returns: { open, closed, dividends, history }
+function computePortfolio(transactions) {
+  // Sort chronologically
+  const txs = [...transactions].sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
+
+  const positions = {}; // ticker → { shares, totalCost, avgPrice, name, category, broker, firstBuy }
+  const closed    = []; // fully closed positions with realized P&L
+  const dividends = txs.filter(t=>t.txType==="dividend");
+  const history   = []; // { date, totalCost, totalValue (same as cost here, updated later) }
+
+  for (const tx of txs) {
+    if (tx.txType === "dividend") continue;
+
+    const ticker = tx.ticker;
+    const shares = Number(tx.shares);  // negative for sell
     const price  = Number(tx.fillPrice);
+    const isBuy  = shares > 0;
 
-    if (tx.txType === "sell" || shares < 0) {
-      // Prodej — sníží počet ks, avg cena zůstává
-      pos.shares = pos.shares + shares; // shares je záporný
-    } else {
-      // Nákup — vážený průměr
-      const newCost  = pos.totalCost + shares * price;
-      const newShares = pos.shares + shares;
-      pos.totalCost = newCost;
-      pos.shares    = newShares;
-      pos.avgPrice  = newShares > 0 ? newCost / newShares : 0;
+    if (!positions[ticker]) {
+      positions[ticker] = {ticker, name:tx.name||ticker, category:tx.category||"Jiné",
+        broker:tx.broker||"", shares:0, totalCost:0, avgPrice:0,
+        firstBuy:tx.datetime, transactions:[]};
     }
-    // Update name/category from latest tx
-    if (tx.name) pos.name = tx.name;
-    if (tx.category) pos.category = tx.category;
-    if (tx.broker) pos.broker = tx.broker;
-  });
+    const pos = positions[ticker];
+    pos.transactions.push(tx);
 
-  return Object.values(map).filter(p => p.shares > 0.00001);
+    if (isBuy) {
+      // Weighted average cost
+      pos.totalCost += shares * price;
+      pos.shares    += shares;
+      pos.avgPrice   = pos.totalCost / pos.shares;
+    } else {
+      // Sell
+      const sellShares = Math.abs(shares);
+      const realizedPnl = sellShares * (price - pos.avgPrice);
+      pos.shares    -= sellShares;
+      pos.totalCost  = pos.shares > 0.0001 ? pos.avgPrice * pos.shares : 0;
+
+      // If fully closed
+      if (pos.shares <= 0.0001) {
+        closed.push({
+          ticker, name:pos.name, category:pos.category, broker:pos.broker,
+          closedAt:tx.datetime, avgBuyPrice:pos.avgPrice,
+          sellPrice:price, realizedPnl,
+          realizedPct: pos.avgPrice > 0 ? (realizedPnl / (sellShares * pos.avgPrice)) * 100 : 0,
+        });
+        delete positions[ticker];
+      }
+    }
+
+    // Snapshot for history chart
+    const totalCost = Object.values(positions).reduce((s,p)=>s+p.totalCost,0);
+    history.push({ date:tx.datetime, totalCost, ticker, action:isBuy?"buy":"sell" });
+  }
+
+  return {
+    open: Object.values(positions).filter(p=>p.shares>0.0001),
+    closed,
+    dividends,
+    history,
+  };
 }
 
-// ── Donut ─────────────────────────────────────────────────────────────────────
-function Donut({ positions, prices }) {
-  const byCat = {}; let total = 0;
-  positions.forEach(p => {
-    const v = p.shares * (prices[p.ticker]?.current ?? p.avgPrice);
-    byCat[p.category] = (byCat[p.category]||0) + v; total += v;
-  });
-  const R=52, cx=70, cy=70, stroke=18, circ=2*Math.PI*R;
-  let offset=0;
-  const segs = Object.entries(byCat).map(([cat,val]) => {
-    const pct=val/(total||1); const seg={cat,pct,offset,dash:pct*circ}; offset+=pct*circ; return seg;
-  });
+// ── Sparkline ──────────────────────────────────────────────────────────────
+const Sparkline = ({up}) => (
+  <svg width="64" height="24" viewBox="0 0 64 24" fill="none">
+    <polyline points={up?"0,20 16,16 32,11 48,7 64,3":"0,3 16,7 32,11 48,16 64,20"}
+      stroke={up?"#2ea84e":"#e03030"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+// ── Portfolio history chart ────────────────────────────────────────────────
+function HistoryChart({history, prices, open}) {
+  if (!history.length) return <div style={{height:160,display:"flex",alignItems:"center",justifyContent:"center",color:"#8a9478",fontSize:12}}>Importujte CSV pro zobrazení vývoje</div>;
+
+  // Build cost basis over time
+  const points = history.map(h=>({date:new Date(h.date),val:h.totalCost}));
+  // Add current value as last point
+  const currentVal = open.reduce((s,p)=>s+p.shares*(prices[p.ticker]?.current??p.avgPrice),0);
+  if (currentVal>0) points.push({date:new Date(),val:currentVal});
+
+  const W=600,H=150;
+  const dates = points.map(p=>p.date.getTime());
+  const vals  = points.map(p=>p.val);
+  const minD=Math.min(...dates),maxD=Math.max(...dates);
+  const minV=Math.min(...vals)*0.97,maxV=Math.max(...vals)*1.03;
+  const toX = d => ((d-minD)/(maxD-minD||1))*W;
+  const toY = v => H-((v-minV)/(maxV-minV||1))*(H-20)-10;
+
+  const pathD = points.map((p,i)=>`${i===0?"M":"L"}${toX(p.date.getTime())},${toY(p.val)}`).join(" ");
+  const areaD = pathD+` L${W},${H} L0,${H}Z`;
+
+  const lastUp = vals[vals.length-1] >= vals[0];
+  const color  = lastUp?"#6abf00":"#e03030";
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:H}}>
+      <defs>
+        <linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.15"/>
+          <stop offset="100%" stopColor={color} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      {[.25,.5,.75].map(t=><line key={t} x1="0" y1={H*t} x2={W} y2={H*t} stroke="#dde3d4" strokeWidth="1"/>)}
+      <path d={areaD} fill="url(#hg)"/>
+      <path d={pathD} stroke={color} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx={toX(dates[dates.length-1])} cy={toY(vals[vals.length-1])} r="5" fill={color}/>
+    </svg>
+  );
+}
+
+// ── Donut ──────────────────────────────────────────────────────────────────
+function Donut({open, prices}) {
+  const byCat={};let tot=0;
+  open.forEach(p=>{const v=p.shares*(prices[p.ticker]?.current??p.avgPrice);byCat[p.category]=(byCat[p.category]||0)+v;tot+=v;});
+  const R=52,cx=70,cy=70,sw=18,circ=2*Math.PI*R;let off=0;
+  const segs=Object.entries(byCat).map(([cat,val])=>{const pct=val/(tot||1);const s={cat,off,dash:pct*circ};off+=pct*circ;return s;});
   return (
     <svg width="140" height="140" viewBox="0 0 140 140">
-      {segs.map(s=>(
-        <circle key={s.cat} cx={cx} cy={cy} r={R} fill="none"
-          stroke={CAT_COLORS[s.cat]||"#94a3b8"} strokeWidth={stroke}
-          strokeDasharray={`${s.dash} ${circ}`} strokeDashoffset={-s.offset+circ*0.25}/>
-      ))}
+      {segs.map(s=><circle key={s.cat} cx={cx} cy={cy} r={R} fill="none" stroke={CAT_COLORS[s.cat]||"#94a3b8"} strokeWidth={sw} strokeDasharray={`${s.dash} ${circ}`} strokeDashoffset={-s.off+circ*.25}/>)}
       <text x={cx} y={cy-6} textAnchor="middle" fontSize="13" fontFamily="'Syne',sans-serif" fontWeight="700" fill="#1a1f12">{segs.length}</text>
       <text x={cx} y={cy+9} textAnchor="middle" fontSize="8" fontFamily="'DM Mono',monospace" fill="#8a9478" letterSpacing="1">TŘÍDY</text>
     </svg>
   );
 }
 
-function Sparkline({ up }) {
-  const pts = up ? "0,22 20,18 40,14 60,10 80,5" : "0,5 20,10 40,14 60,18 80,22";
-  return <svg width="80" height="28" viewBox="0 0 80 28" fill="none"><polyline points={pts} stroke={up?"#2ea84e":"#e03030"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-}
-
-function PortfolioChart({ totalValue }) {
-  const W=600,H=140,pts=[0,2,-1,4,2,6,3,5,8,5,10,7,12,9,14,11,13,15,12,17,16];
-  const base=totalValue*0.82;
-  const vals=pts.map((p,i)=>base+(totalValue-base)*(i/(pts.length-1))*(1+p/100));
-  const min=Math.min(...vals),max=Math.max(...vals);
-  const toY=v=>H-((v-min)/((max-min)||1))*(H-20)-10;
-  const toX=i=>(i/(pts.length-1))*W;
-  const pathD=vals.map((v,i)=>`${i===0?"M":"L"}${toX(i)},${toY(v)}`).join(" ");
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:140}}>
-      <defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6abf00" stopOpacity="0.15"/><stop offset="100%" stopColor="#6abf00" stopOpacity="0"/></linearGradient></defs>
-      {[0.25,0.5,0.75].map(t=><line key={t} x1="0" y1={H*t} x2={W} y2={H*t} stroke="#dde3d4" strokeWidth="1"/>)}
-      <path d={`${pathD} L${W},${H} L0,${H}Z`} fill="url(#cg)"/>
-      <path d={pathD} stroke="#6abf00" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx={toX(vals.length-1)} cy={toY(vals[vals.length-1])} r="5" fill="#6abf00"/>
-      <circle cx={toX(vals.length-1)} cy={toY(vals[vals.length-1])} r="9" fill="#6abf00" fillOpacity="0.2"/>
-    </svg>
-  );
-}
-
-// ── Modal přidat transakci ────────────────────────────────────────────────────
-function Modal({ onClose, onAdd, loading }) {
-  const now = new Date();
-  const localISO = new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  const [form, setForm] = useState({
-    ticker:"", name:"", category:"Tech", shares:"", fillPrice:"", volume:"",
-    currency:"CZK", datetime:localISO, broker:"Trading 212", customBroker:false,
-    txType:"buy", nameLoading:false, nameLoaded:false,
-  });
-
-  const set = k => e => {
-    const val = e.target.value;
-    setForm(f => {
-      const u = {...f,[k]:val};
-      if (k==="shares"||k==="fillPrice") {
-        const s=k==="shares"?val:f.shares, p=k==="fillPrice"?val:f.fillPrice;
-        if (s&&p) u.volume=(parseFloat(s)*parseFloat(p)).toFixed(2);
-      }
-      return u;
-    });
+// ── CSV Parser (Trading 212 format) ───────────────────────────────────────
+function parseCSV(text) {
+  const lines   = text.trim().split("\n");
+  const headers = lines[0].split(",").map(h=>h.replace(/"/g,"").trim());
+  const parseRow = row => {
+    const parts=[]; let inQ=false,cur="";
+    for (const ch of row){if(ch==='"'){inQ=!inQ;}else if(ch===","&&!inQ){parts.push(cur.trim());cur="";}else cur+=ch;}
+    parts.push(cur.trim()); return parts;
   };
+  const col=(parts,name)=>{const i=headers.findIndex(h=>h===name);return i<0?"":(parts[i]||"").replace(/"/g,"").trim();};
 
-  const handleTickerBlur = async () => {
-    const ticker=form.ticker.trim().toUpperCase();
-    if (!ticker||form.nameLoaded) return;
+  const txs=[];
+  for (const line of lines.slice(1)){
+    if (!line.trim()) continue;
+    const parts  = parseRow(line);
+    const action = col(parts,"Action").toLowerCase();
+    const ticker = col(parts,"Ticker"); if(!ticker) continue;
+    const name   = col(parts,"Name");
+    const dt     = col(parts,"Time");
+    const cur    = col(parts,"Currency (Price / share)")||col(parts,"Currency (Total)")||"EUR";
+
+    if (action.includes("buy")){
+      const shares=parseFloat(col(parts,"No. of shares")); if(isNaN(shares)) continue;
+      const fill=parseFloat(col(parts,"Price / share"));   if(isNaN(fill)) continue;
+      txs.push({id:uid(),ticker:ticker.toUpperCase(),name,shares,fillPrice:fill,volume:col(parts,"Total"),currency:cur,datetime:dt,broker:"Trading 212",txType:"buy",category:"Jiné"});
+    } else if (action.includes("sell")){
+      const shares=parseFloat(col(parts,"No. of shares")); if(isNaN(shares)) continue;
+      const fill=parseFloat(col(parts,"Price / share"));   if(isNaN(fill)) continue;
+      txs.push({id:uid(),ticker:ticker.toUpperCase(),name,shares:-Math.abs(shares),fillPrice:fill,volume:col(parts,"Total"),currency:cur,datetime:dt,broker:"Trading 212",txType:"sell",category:"Jiné"});
+    } else if (action.includes("dividend")){
+      const amount=parseFloat(col(parts,"Total"))||0;
+      txs.push({id:uid(),ticker:ticker.toUpperCase(),name,shares:0,fillPrice:0,volume:String(amount),amount,currency:col(parts,"Currency (Total)")||cur,datetime:dt,broker:"Trading 212",txType:"dividend",category:"Dividenda"});
+    }
+  }
+  return txs;
+}
+
+// ── Modal: přidat transakci ────────────────────────────────────────────────
+function Modal({onClose,onAdd,loading}){
+  const now=new Date();
+  const localISO=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const [form,setForm]=useState({ticker:"",name:"",category:"Jiné",shares:"",fillPrice:"",volume:"",currency:"CZK",datetime:localISO,broker:"Trading 212",txType:"buy",nameLoading:false,nameLoaded:false,customBroker:false});
+  const IS={width:"100%",padding:"10px 14px",borderRadius:10,border:"1.5px solid #dde3d4",fontFamily:"'DM Mono',monospace",fontSize:13,color:"#1a1f12",outline:"none",boxSizing:"border-box",background:"#fff"};
+  const LS={fontSize:10,letterSpacing:1,color:"#8a9478",display:"block",marginBottom:5,textTransform:"uppercase"};
+  const set=k=>e=>{const v=e.target.value;setForm(f=>{const u={...f,[k]:v};if(k==="shares"||k==="fillPrice"){const s=k==="shares"?v:f.shares,p=k==="fillPrice"?v:f.fillPrice;if(s&&p)u.volume=(parseFloat(s)*parseFloat(p)).toFixed(2);}return u;});};
+  const lookupName=async()=>{
+    const t=form.ticker.trim().toUpperCase();if(!t||form.nameLoaded)return;
     setForm(f=>({...f,nameLoading:true}));
-    try {
-      const res=await fetch(APPS_SCRIPT_URL+"?"+new URLSearchParams({action:"getCompanyName",ticker}));
-      const data=await res.json();
-      setForm(f=>({...f,nameLoading:false,nameLoaded:true,name:data.name||f.name,currency:data.currency||f.currency}));
-    } catch { setForm(f=>({...f,nameLoading:false})); }
+    try{const r=await fetch(API+"?"+new URLSearchParams({action:"getCompanyName",ticker:t}));const d=await r.json();setForm(f=>({...f,nameLoading:false,nameLoaded:true,name:d.name||f.name,currency:d.currency||f.currency}));}
+    catch{setForm(f=>({...f,nameLoading:false}));}
   };
-
-  const inputStyle={width:"100%",padding:"10px 14px",borderRadius:10,border:"1.5px solid #dde3d4",fontFamily:"'DM Mono',monospace",fontSize:13,color:"#1a1f12",outline:"none",boxSizing:"border-box",background:"#fff"};
-  const labelStyle={fontSize:10,letterSpacing:1,color:"#8a9478",display:"block",marginBottom:5,textTransform:"uppercase"};
+  const CURS=["CZK","USD","EUR","GBP","Jiná…"];
+  const activeCur=CURS.includes(form.currency)?form.currency:"Jiná…";
   const valid=form.ticker&&form.shares&&form.fillPrice&&form.datetime;
-  const CURRENCIES=["CZK","USD","EUR","GBP","Jiná…"];
-  const activeCur=CURRENCIES.includes(form.currency)?form.currency:"Jiná…";
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.35)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}}>
-      <div style={{background:"#fff",borderRadius:20,padding:"32px 36px",width:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 32px 80px rgba(15,23,42,0.14)",fontFamily:"'DM Mono',monospace"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.35)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"32px 36px",width:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 32px 80px rgba(15,23,42,.14)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-          <span style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700,color:"#1a1f12"}}>Nová transakce</span>
+          <span style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700}}>Nová transakce</span>
           <button onClick={onClose} style={{background:"#f4f6f0",border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:18,color:"#8a9478"}}>×</button>
         </div>
 
-        {/* Typ transakce */}
-        <div style={{marginBottom:18,display:"flex",gap:8}}>
-          {[["buy","Nákup","#6abf00"],["sell","Prodej","#e03030"]].map(([type,label,color])=>(
-            <button key={type} onClick={()=>setForm(f=>({...f,txType:type}))}
-              style={{flex:1,padding:"10px",borderRadius:10,border:`2px solid ${form.txType===type?color:"#dde3d4"}`,background:form.txType===type?`${color}10`:"#fff",color:form.txType===type?color:"#8a9478",fontFamily:"'Syne',sans-serif",fontWeight:600,fontSize:13,cursor:"pointer"}}>
-              {label}
-            </button>
+        {/* Typ */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
+          {[["buy","Nákup","#6abf00"],["sell","Prodej","#e03030"]].map(([t,l,c])=>(
+            <button key={t} onClick={()=>setForm(f=>({...f,txType:t}))} style={{padding:"10px",borderRadius:10,border:`2px solid ${form.txType===t?c:"#dde3d4"}`,background:form.txType===t?c+"10":"#fff",color:form.txType===t?c:"#8a9478",fontFamily:"'Syne',sans-serif",fontWeight:600,fontSize:13,cursor:"pointer"}}>{l}</button>
           ))}
         </div>
 
-        {/* Ticker + název */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12,marginBottom:14}}>
           <div>
-            <label style={labelStyle}>Ticker</label>
-            <input value={form.ticker} onChange={e=>setForm(f=>({...f,ticker:e.target.value.toUpperCase(),nameLoaded:false}))}
-              onBlur={handleTickerBlur} style={inputStyle}
-              onFocus={e=>e.target.style.borderColor="#6abf00"}/>
+            <label style={LS}>Ticker</label>
+            <input value={form.ticker} onChange={e=>setForm(f=>({...f,ticker:e.target.value.toUpperCase(),nameLoaded:false}))} onBlur={lookupName} style={IS} onFocus={e=>e.target.style.borderColor="#6abf00"}/>
           </div>
           <div>
-            <label style={labelStyle}>Název
-              {form.nameLoading&&<span style={{marginLeft:6,color:"#6abf00",fontSize:9}}>načítám…</span>}
-              {form.nameLoaded&&!form.nameLoading&&<span style={{marginLeft:6,color:"#2ea84e",fontSize:9}}>✓</span>}
-            </label>
-            <input value={form.name} onChange={set("name")} style={inputStyle}
-              onFocus={e=>e.target.style.borderColor="#6abf00"}
-              onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
+            <label style={LS}>Název {form.nameLoading&&<span style={{color:"#6abf00",fontSize:9}}>načítám…</span>}{form.nameLoaded&&<span style={{color:"#2ea84e",fontSize:9}}>✓</span>}</label>
+            <input value={form.name} onChange={set("name")} style={IS} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
           </div>
         </div>
 
-        {/* Datum */}
         <div style={{marginBottom:14}}>
-          <label style={labelStyle}>Datum a čas transakce</label>
-          <input type="datetime-local" value={form.datetime} onChange={set("datetime")} style={inputStyle}
-            onFocus={e=>e.target.style.borderColor="#6abf00"}
-            onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
+          <label style={LS}>Datum a čas</label>
+          <input type="datetime-local" value={form.datetime} onChange={set("datetime")} style={IS} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
         </div>
 
-        {/* Počet ks + cena */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-          <div>
-            <label style={labelStyle}>Počet kusů</label>
-            <input type="number" value={form.shares} onChange={set("shares")} style={inputStyle}
-              onFocus={e=>e.target.style.borderColor="#6abf00"}
-              onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
-          </div>
-          <div>
-            <label style={labelStyle}>Realizační cena</label>
-            <input type="number" value={form.fillPrice} onChange={set("fillPrice")} style={inputStyle}
-              onFocus={e=>e.target.style.borderColor="#6abf00"}
-              onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
-          </div>
+          <div><label style={LS}>Počet kusů</label><input type="number" value={form.shares} onChange={set("shares")} style={IS} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/></div>
+          <div><label style={LS}>Realizační cena</label><input type="number" value={form.fillPrice} onChange={set("fillPrice")} style={IS} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/></div>
         </div>
 
-        {/* Objem + měna */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+          <div><label style={LS}>Objem transakce</label><input type="number" value={form.volume} onChange={set("volume")} style={{...IS,background:form.shares&&form.fillPrice?"#f9fbf6":"#fff"}} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/></div>
           <div>
-            <label style={labelStyle}>Objem transakce</label>
-            <input type="number" value={form.volume} onChange={set("volume")}
-              style={{...inputStyle,background:form.shares&&form.fillPrice?"#f9fbf6":"#fff"}}
-              onFocus={e=>e.target.style.borderColor="#6abf00"}
-              onBlur={e=>e.target.style.borderColor="#dde3d4"}/>
-          </div>
-          <div>
-            <label style={labelStyle}>Měna</label>
+            <label style={LS}>Měna</label>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {CURRENCIES.map(c=>(
-                <button key={c} onClick={()=>setForm(f=>({...f,currency:c==="Jiná…"?"":c}))}
-                  style={{padding:"5px 10px",borderRadius:8,border:`1.5px solid ${activeCur===c?"#6abf00":"#dde3d4"}`,background:activeCur===c?"#f0fdf4":"#fff",color:activeCur===c?"#3a6600":"#8a9478",fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
-                  {c}
-                </button>
-              ))}
+              {CURS.map(c=><button key={c} onClick={()=>setForm(f=>({...f,currency:c==="Jiná…"?"":c}))} style={{padding:"5px 10px",borderRadius:8,border:`1.5px solid ${activeCur===c?"#6abf00":"#dde3d4"}`,background:activeCur===c?"#f0fdf4":"#fff",color:activeCur===c?"#3a6600":"#8a9478",fontSize:11,cursor:"pointer"}}>{c}</button>)}
             </div>
-            {activeCur==="Jiná…"&&<input value={form.currency} onChange={set("currency")} style={{...inputStyle,marginTop:6}} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/>}
+            {activeCur==="Jiná…"&&<input value={form.currency} onChange={set("currency")} style={{...IS,marginTop:6}} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/>}
           </div>
         </div>
 
-        {/* Kategorie */}
         <div style={{marginBottom:14}}>
-          <label style={labelStyle}>Kategorie</label>
-          <select value={form.category} onChange={set("category")} style={{...inputStyle,cursor:"pointer"}}>
-            {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+          <label style={LS}>Kategorie</label>
+          <select value={form.category} onChange={set("category")} style={{...IS,cursor:"pointer"}}>
+            {Object.keys(CAT_COLORS).map(c=><option key={c}>{c}</option>)}
           </select>
         </div>
 
-        {/* Broker */}
         <div style={{marginBottom:20}}>
-          <label style={labelStyle}>Broker</label>
+          <label style={LS}>Broker</label>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {[...DEFAULT_BROKERS,"Jiný…"].map(b=>(
-              <button key={b} onClick={()=>setForm(f=>({...f,broker:b==="Jiný…"?"":b,customBroker:b==="Jiný…"}))}
-                style={{padding:"6px 12px",borderRadius:8,border:`1.5px solid ${(form.broker===b||(form.customBroker&&b==="Jiný…"))?"#6abf00":"#dde3d4"}`,background:(form.broker===b||(form.customBroker&&b==="Jiný…"))?"#f0fdf4":"#fff",color:(form.broker===b||(form.customBroker&&b==="Jiný…"))?"#3a6600":"#8a9478",fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
-                {b}
-              </button>
-            ))}
+            {[...BROKERS,"Jiný…"].map(b=><button key={b} onClick={()=>setForm(f=>({...f,broker:b==="Jiný…"?"":b,customBroker:b==="Jiný…"}))} style={{padding:"6px 12px",borderRadius:8,border:`1.5px solid ${(form.broker===b||(form.customBroker&&b==="Jiný…"))?"#6abf00":"#dde3d4"}`,background:(form.broker===b||(form.customBroker&&b==="Jiný…"))?"#f0fdf4":"#fff",color:(form.broker===b||(form.customBroker&&b==="Jiný…"))?"#3a6600":"#8a9478",fontSize:11,cursor:"pointer"}}>{b}</button>)}
           </div>
-          {form.customBroker&&<input value={form.broker} onChange={e=>setForm(f=>({...f,broker:e.target.value}))} style={{...inputStyle,marginTop:8}} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/>}
+          {form.customBroker&&<input value={form.broker} onChange={e=>setForm(f=>({...f,broker:e.target.value}))} style={{...IS,marginTop:8}} onFocus={e=>e.target.style.borderColor="#6abf00"} onBlur={e=>e.target.style.borderColor="#dde3d4"}/>}
         </div>
 
-        {/* Shrnutí */}
-        {form.shares&&form.fillPrice&&(
-          <div style={{background:"#f4f6f0",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:11,color:"#8a9478",display:"flex",justifyContent:"space-between"}}>
-            <span>{form.shares} ks × {form.fillPrice} {form.currency||"—"}</span>
-            <span style={{color:"#1a1f12",fontWeight:500}}>= {form.volume?parseFloat(form.volume).toLocaleString("cs-CZ"):"—"} {form.currency}</span>
-          </div>
-        )}
+        {form.shares&&form.fillPrice&&<div style={{background:"#f4f6f0",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:11,color:"#8a9478",display:"flex",justifyContent:"space-between"}}><span>{form.shares} ks × {form.fillPrice} {form.currency}</span><span style={{color:"#1a1f12",fontWeight:500}}>= {form.volume?parseFloat(form.volume).toLocaleString("cs-CZ"):"—"} {form.currency}</span></div>}
 
-        <button onClick={()=>onAdd({...form,avgPrice:form.fillPrice})} disabled={!valid||loading}
-          style={{width:"100%",padding:13,background:valid&&!loading?"#6abf00":"#eef1e8",border:"none",borderRadius:12,fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:500,color:valid&&!loading?"#fff":"#8a9478",cursor:valid&&!loading?"pointer":"not-allowed"}}>
-          {loading?"Ukládám…":`${form.txType==="buy"?"Přidat nákup":"Přidat prodej"} →`}
+        <button onClick={()=>onAdd(form)} disabled={!valid||loading} style={{width:"100%",padding:13,background:valid&&!loading?"#6abf00":"#eef1e8",border:"none",borderRadius:12,fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:500,color:valid&&!loading?"#fff":"#8a9478",cursor:valid&&!loading?"pointer":"not-allowed"}}>
+          {loading?"Ukládám…":form.txType==="buy"?"Přidat nákup →":"Přidat prodej →"}
         </button>
       </div>
     </div>
   );
 }
 
-// ── Hlavní App ────────────────────────────────────────────────────────────────
-function App() {
-  const [transactions, setTransactions] = useState([]);
-  const [dividends, setDividends]       = useState([]);
-  const [prices, setPrices]             = useState({});
-  const [loadingData, setLoadingData]   = useState(true);
-  const [loadingPrices, setLoadingPrices] = useState(false);
-  const [savingTx, setSavingTx]         = useState(false);
-  const [error, setError]               = useState(null);
-  const [showModal, setShowModal]       = useState(false);
-  const [activeTab, setActiveTab]       = useState("přehled");
-  const [sortBy, setSortBy]             = useState("value");
-  const [lastUpdated, setLastUpdated]   = useState(null);
-  const [csvImporting, setCsvImporting] = useState(false);
-  const [csvResult, setCsvResult]       = useState(null);
-  const intervalRef = useRef(null);
+// ── Main App ──────────────────────────────────────────────────────────────
+function App(){
+  const [transactions,setTransactions] = useState([]);
+  const [prices,setPrices]             = useState({});
+  const [loading,setLoading]           = useState(true);
+  const [loadingPrices,setLoadingPrices] = useState(false);
+  const [saving,setSaving]             = useState(false);
+  const [error,setError]               = useState(null);
+  const [showModal,setShowModal]       = useState(false);
+  const [tab,setTab]                   = useState("přehled");
+  const [lastUpdated,setLastUpdated]   = useState(null);
+  const [csvState,setCsvState]         = useState(null); // null | "loading" | {imported,counts,failed}
+  const timerRef = useRef(null);
 
-  // ── Load ──────────────────────────────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    try {
-      const data = await apiFetch({ action: "getTransactions" });
-      if (data.error) throw new Error(data.error);
-      setTransactions(data.transactions || []);
-      setDividends(data.dividends || []);
-      return data.transactions || [];
-    } catch(e) { setError("Nepodařilo se načíst data: "+e.message); return []; }
-  }, []);
+  // ── Load all transactions ───────────────────────────────────────────────
+  const loadTransactions = useCallback(async()=>{
+    try{
+      const d=await apiFetch({action:"getTransactions"});
+      if(d.error) throw new Error(d.error);
+      const all=[...(d.transactions||[]),...(d.dividends||[])];
+      setTransactions(all);
+      return all;
+    }catch(e){setError("Chyba při načítání: "+e.message);return [];}
+  },[]);
 
-  const loadPrices = useCallback(async (txs) => {
-    const positions = aggregatePositions(txs || transactions);
-    if (!positions.length) return;
+  // ── Load prices for open positions ──────────────────────────────────────
+  const loadPrices = useCallback(async(txs)=>{
+    const source=txs||transactions;
+    const {open}=computePortfolio(source);
+    if(!open.length)return;
     setLoadingPrices(true);
-    try {
-      const tickers = [...new Set(positions.map(p=>p.ticker))].join(",");
-      const data = await apiFetch({ action:"getPrices", tickers });
-      if (data.prices) { setPrices(data.prices); setLastUpdated(new Date()); }
-    } catch(e) { console.error(e); }
-    finally { setLoadingPrices(false); }
-  }, [transactions]);
+    try{
+      const tickers=[...new Set(open.map(p=>p.ticker))].join(",");
+      const d=await apiFetch({action:"getPrices",tickers});
+      if(d.prices){setPrices(d.prices);setLastUpdated(new Date());}
+    }catch(e){console.error(e);}
+    finally{setLoadingPrices(false);}
+  },[transactions]);
 
-  useEffect(() => {
-    const init = async () => {
-      setLoadingData(true);
-      const txs = await loadData();
-      await loadPrices(txs);
-      setLoadingData(false);
-    };
+  useEffect(()=>{
+    const init=async()=>{setLoading(true);const txs=await loadTransactions();await loadPrices(txs);setLoading(false);};
     init();
-  }, []);
+  },[]);
 
-  useEffect(() => {
-    intervalRef.current = setInterval(() => loadPrices(), REFRESH_INTERVAL);
-    return () => clearInterval(intervalRef.current);
-  }, [transactions]);
+  useEffect(()=>{
+    timerRef.current=setInterval(()=>loadPrices(),REFRESH);
+    return()=>clearInterval(timerRef.current);
+  },[transactions]);
 
-  // ── Přidat transakci ──────────────────────────────────────────────────────
-  const handleAdd = useCallback(async (form) => {
-    setSavingTx(true);
-    try {
-      const tx = {
-        id: uid(), ticker: form.ticker.toUpperCase().trim(),
-        name: form.name || form.ticker.toUpperCase(),
-        category: form.category, shares: form.txType==="sell" ? -Math.abs(parseFloat(form.shares)) : parseFloat(form.shares),
-        fillPrice: parseFloat(form.fillPrice), volume: form.volume,
-        currency: form.currency, datetime: form.datetime,
-        broker: form.broker, txType: form.txType,
-      };
-      const res = await apiPost({ action:"addTransaction", tx });
-      if (res.error) throw new Error(res.error);
-      const updated = [...transactions, tx];
+  // ── Add single transaction ──────────────────────────────────────────────
+  const handleAdd=useCallback(async(form)=>{
+    setSaving(true);
+    try{
+      const tx={id:uid(),ticker:form.ticker.toUpperCase().trim(),name:form.name||form.ticker,category:form.category,
+        shares:form.txType==="sell"?-Math.abs(parseFloat(form.shares)):parseFloat(form.shares),
+        fillPrice:parseFloat(form.fillPrice),volume:form.volume,currency:form.currency,
+        datetime:form.datetime,broker:form.broker,txType:form.txType};
+      const res=await apiPost({action:"addTransaction",tx});
+      if(res.error) throw new Error(res.error);
+      const updated=[...transactions,tx];
       setTransactions(updated);
       await loadPrices(updated);
       setShowModal(false);
-    } catch(e) { setError("Chyba: "+e.message); }
-    finally { setSavingTx(false); }
-  }, [transactions, loadPrices]);
+    }catch(e){setError("Chyba: "+e.message);}
+    finally{setSaving(false);}
+  },[transactions,loadPrices]);
 
-  // ── Smazat transakci ──────────────────────────────────────────────────────
-  const handleDeleteTx = useCallback(async (id) => {
-    try {
-      await apiFetch({ action:"deleteTransaction", id, sheet:"Transakce" });
-      const updated = transactions.filter(t=>t.id!==id);
+  // ── Delete transaction ──────────────────────────────────────────────────
+  const handleDelete=useCallback(async(id,isDividend)=>{
+    try{
+      await apiFetch({action:"deleteTransaction",id,sheet:isDividend?"Dividendy":"Transakce"});
+      const updated=transactions.filter(t=>t.id!==id);
       setTransactions(updated);
       await loadPrices(updated);
-    } catch(e) { setError("Nepodařilo se smazat transakci."); }
-  }, [transactions, loadPrices]);
+    }catch(e){setError("Nepodařilo se smazat.");}
+  },[transactions,loadPrices]);
 
-  // ── CSV import ────────────────────────────────────────────────────────────
-  const handleCSVImport = useCallback(async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    setCsvImporting(true); setCsvResult(null);
-    const text  = await file.text();
-    const lines = text.trim().split("\n");
-    const headers = lines[0].split(",").map(h=>h.replace(/"/g,"").trim());
+  // ── CSV Import ──────────────────────────────────────────────────────────
+  const handleCSV=useCallback(async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    setCsvState("loading");
+    try{
+      const text=await file.text();
+      const txs=parseCSV(text);
+      const counts={buy:0,sell:0,dividend:0};
+      txs.forEach(t=>counts[t.txType]=(counts[t.txType]||0)+1);
 
-    const parseRow = row => {
-      const parts=[]; let inQ=false,cur="";
-      for (const ch of row) {
-        if (ch==='"'){inQ=!inQ;}
-        else if (ch===","&&!inQ){parts.push(cur.trim());cur="";}
-        else cur+=ch;
-      }
-      parts.push(cur.trim()); return parts;
-    };
-    const getCol = (parts,name) => { const i=headers.findIndex(h=>h===name); return i===-1?"":(parts[i]||"").replace(/"/g,"").trim(); };
+      // Save all to Apps Script in batch
+      const nonDiv=txs.filter(t=>t.txType!=="dividend");
+      const divs  =txs.filter(t=>t.txType==="dividend");
+      let failed=0;
+      if(nonDiv.length){const r=await apiPost({action:"addTransactions",txs:nonDiv});failed+=r.failed||0;}
+      if(divs.length)  {const r=await apiPost({action:"addTransactions",txs:divs});  failed+=r.failed||0;}
 
-    const counts={buy:0,sell:0,dividend:0}; let failed=0;
-    const newTxs=[];
-
-    for (const line of lines.slice(1)) {
-      if (!line.trim()) continue;
-      const parts  = parseRow(line);
-      const action = getCol(parts,"Action").toLowerCase();
-      const isBuy=action.includes("buy"), isSell=action.includes("sell"), isDividend=action.includes("dividend");
-      if (!isBuy&&!isSell&&!isDividend) continue;
-
-      const ticker   = getCol(parts,"Ticker"); if(!ticker){failed++;continue;}
-      const name     = getCol(parts,"Name");
-      const datetime = getCol(parts,"Time");
-      const currency = getCol(parts,"Currency (Price / share)")||getCol(parts,"Currency (Total)")||"EUR";
-
-      try {
-        if (isDividend) {
-          const amount = parseFloat(getCol(parts,"Total"))||0;
-          newTxs.push({ id:uid(), ticker:ticker.toUpperCase(), name:name||ticker, amount, currency, datetime, broker:"Trading 212", txType:"dividend" });
-          counts.dividend++;
-        } else {
-          const shares    = parseFloat(getCol(parts,"No. of shares"));
-          const fillPrice = parseFloat(getCol(parts,"Price / share"));
-          const total     = getCol(parts,"Total");
-          if (isNaN(shares)||isNaN(fillPrice)){failed++;continue;}
-          newTxs.push({
-            id:uid(), ticker:ticker.toUpperCase(), name:name||ticker,
-            category:"Jiné", shares: isSell?-Math.abs(shares):shares,
-            fillPrice, volume:total, currency, datetime,
-            broker:"Trading 212", txType:isSell?"sell":"buy",
-          });
-          if (isBuy) counts.buy++; else counts.sell++;
-        }
-      } catch{failed++;}
-    }
-
-    // Batch save to Apps Script
-    if (newTxs.length > 0) {
-      const nonDiv = newTxs.filter(t=>t.txType!=="dividend");
-      const divs   = newTxs.filter(t=>t.txType==="dividend");
-      if (nonDiv.length) await apiPost({ action:"addTransactions", txs:nonDiv });
-      if (divs.length)   await apiPost({ action:"addTransactions", txs:divs });
-    }
-
-    const updatedTxs = [...transactions, ...newTxs.filter(t=>t.txType!=="dividend")];
-    const updatedDivs = [...dividends,   ...newTxs.filter(t=>t.txType==="dividend")];
-    setTransactions(updatedTxs);
-    setDividends(updatedDivs);
-    await loadPrices(updatedTxs);
-    setCsvImporting(false);
-    setCsvResult({ imported:newTxs.length, failed, counts });
+      const updated=[...transactions,...txs];
+      setTransactions(updated);
+      await loadPrices(updated);
+      setCsvState({imported:txs.length,counts,failed});
+    }catch(err){setError("Chyba importu: "+err.message);setCsvState(null);}
     e.target.value="";
-  }, [transactions, dividends, loadPrices]);
+  },[transactions,loadPrices]);
 
-  // ── Computed ──────────────────────────────────────────────────────────────
-  const positions = useMemo(() => aggregatePositions(transactions), [transactions]);
+  // ── Computed portfolio state ────────────────────────────────────────────
+  const portfolio = useMemo(()=>computePortfolio(transactions),[transactions]);
+  const {open,closed,dividends,history} = portfolio;
 
-  const stats = useMemo(() => {
-    const totalValue = positions.reduce((s,p)=>s+p.shares*(prices[p.ticker]?.current??p.avgPrice),0);
-    const totalCost  = positions.reduce((s,p)=>s+p.totalCost,0);
-    const totalPnl   = totalValue-totalCost;
-    const totalPct   = totalCost>0?(totalPnl/totalCost)*100:0;
-    const totalDividends = dividends.reduce((s,d)=>s+Number(d.amount||0),0);
-    return { totalValue, totalCost, totalPnl, totalPct, totalDividends };
-  }, [positions, prices, dividends]);
+  const stats = useMemo(()=>{
+    const totalValue = open.reduce((s,p)=>s+p.shares*(prices[p.ticker]?.current??p.avgPrice),0);
+    const totalCost  = open.reduce((s,p)=>s+p.totalCost,0);
+    const unrealPnl  = totalValue-totalCost;
+    const unrealPct  = totalCost>0?(unrealPnl/totalCost)*100:0;
+    const realPnl    = closed.reduce((s,c)=>s+c.realizedPnl,0);
+    const totalDiv   = dividends.reduce((s,d)=>s+Number(d.amount||0),0);
+    const totalReturn= unrealPnl+realPnl+totalDiv;
+    return {totalValue,totalCost,unrealPnl,unrealPct,realPnl,totalDiv,totalReturn};
+  },[open,closed,dividends,prices]);
 
-  const sortedPositions = useMemo(() => [...positions].sort((a,b)=>{
-    const pA=prices[a.ticker]?.current??a.avgPrice, pB=prices[b.ticker]?.current??b.avgPrice;
-    if (sortBy==="value") return b.shares*pB-a.shares*pA;
-    if (sortBy==="pnl")   return (prices[b.ticker]?.changePct??0)-(prices[a.ticker]?.changePct??0);
-    if (sortBy==="ticker") return a.ticker.localeCompare(b.ticker);
-    return 0;
-  }), [positions, prices, sortBy]);
+  const sortedOpen=[...open].sort((a,b)=>b.shares*(prices[b.ticker]?.current??b.avgPrice)-a.shares*(prices[a.ticker]?.current??a.avgPrice));
 
-  const byCategory = useMemo(() => {
-    const total=stats.totalValue||1, map={};
-    positions.forEach(p=>{ const v=p.shares*(prices[p.ticker]?.current??p.avgPrice); map[p.category]=(map[p.category]||0)+v; });
-    return Object.entries(map).map(([cat,val])=>({cat,val,pct:(val/total)*100})).sort((a,b)=>b.pct-a.pct);
-  }, [positions, prices, stats.totalValue]);
-
-  const s = stats;
-
-  if (loadingData) return (
-    <div style={{minHeight:"100vh",background:"#f4f6f0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'DM Mono',monospace",gap:12}}>
+  if(loading) return(
+    <div style={{minHeight:"100vh",background:"#f4f6f0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
       <div style={{width:36,height:36,background:"#6abf00",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:16,color:"#fff"}}>P</div>
-      <div style={{fontSize:12,color:"#8a9478",letterSpacing:1}}>NAČÍTÁM PORTFOLIO…</div>
+      <div style={{fontSize:12,color:"#8a9478",letterSpacing:1}}>NAČÍTÁM…</div>
     </div>
   );
 
-  return (
-    <div className="layout" style={{color:"#1a1f12"}}>
+  const s=stats;
+  const NAV=[["přehled","⬛"],["pozice","☰"],["transakce","↕"],["uzavřené","✓"],["dividendy","$"],["brokeři","▣"]];
+
+  return(
+    <div className="layout">
       {/* Sidebar */}
       <aside className="sidebar">
-        <div style={{width:36,height:36,background:"#6abf00",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:16,color:"#fff"}}>P</div>
-        <nav style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,flex:1}}>
-          {[["přehled","⬛"],["pozice","☰"],["transakce","↕"],["alokace","◎"],["brokeři","▣"],["dividendy","$"]].map(([tab,icon])=>(
-            <button key={tab} className={`nav-item${activeTab===tab?" active":""}`} onClick={()=>setActiveTab(tab)} title={tab}>{icon}</button>
-          ))}
-        </nav>
-        <button className="nav-item" title="Obnovit ceny" onClick={()=>loadPrices()} style={{marginTop:"auto"}}>{loadingPrices?"⟳":"↺"}</button>
+        <div style={{width:36,height:36,background:"#6abf00",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:16,color:"#fff",marginBottom:16}}>P</div>
+        {NAV.map(([t,icon])=><button key={t} className={`nav-item${tab===t?" active":""}`} onClick={()=>setTab(t)} title={t}>{icon}</button>)}
+        <div style={{flex:1}}/>
+        <button className="nav-item" title="Obnovit ceny" onClick={()=>loadPrices()}>{loadingPrices?"⟳":"↺"}</button>
       </aside>
 
       <main style={{padding:"32px 40px",maxWidth:1160}}>
-        {/* Topbar */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:36}}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:32}}>
           <div>
-            <h1 style={{fontFamily:"'Syne',sans-serif",fontSize:26,fontWeight:700,letterSpacing:"-0.5px"}}>
-              {activeTab.charAt(0).toUpperCase()+activeTab.slice(1)}
-            </h1>
-            <span style={{fontSize:11,color:"#8a9478",letterSpacing:1}}>
-              {lastUpdated?`AKTUALIZOVÁNO ${lastUpdated.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})}${loadingPrices?" ⟳":""}` : "NAČÍTÁNÍ CEN…"}
-            </span>
+            <h1 style={{fontFamily:"'Syne',sans-serif",fontSize:26,fontWeight:700,letterSpacing:"-.5px",textTransform:"capitalize"}}>{tab}</h1>
+            <span style={{fontSize:11,color:"#8a9478",letterSpacing:1}}>{lastUpdated?`AKTUALIZOVÁNO ${lastUpdated.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})}${loadingPrices?" ⟳":""}` :"—"}</span>
           </div>
           <div style={{display:"flex",gap:10}}>
-            <label style={{background:"#fff",color:"#6abf00",border:"1.5px solid #6abf00",borderRadius:20,padding:"8px 18px",fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:500,letterSpacing:0.5,cursor:"pointer"}}>
+            <label className="btn btn-outline" style={{cursor:"pointer",display:"flex",alignItems:"center"}}>
               ↑ CSV
-              <input type="file" accept=".csv" onChange={handleCSVImport} style={{display:"none"}}/>
+              <input type="file" accept=".csv" onChange={handleCSV} style={{display:"none"}}/>
             </label>
-            <button onClick={()=>setShowModal(true)} style={{background:"#6abf00",color:"#fff",border:"none",borderRadius:20,padding:"9px 20px",fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:500,letterSpacing:0.5,cursor:"pointer"}}>
-              + Přidat transakci
-            </button>
+            <button className="btn btn-primary" onClick={()=>setShowModal(true)}>+ Přidat transakci</button>
           </div>
         </div>
 
+        {/* Banners */}
         {error&&<div style={{background:"#fff0f0",border:"1px solid #fca5a5",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:12,color:"#e03030",display:"flex",justifyContent:"space-between"}}>{error}<span style={{cursor:"pointer"}} onClick={()=>setError(null)}>×</span></div>}
-        {csvImporting&&<div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:12,color:"#3a6600"}}>⟳ Importuji CSV…</div>}
-        {csvResult&&<div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:12,color:"#3a6600",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span>✓ {csvResult.imported} záznamů importováno <span style={{color:"#8a9478"}}>({csvResult.counts.buy} nákupů · {csvResult.counts.sell} prodejů · {csvResult.counts.dividend} dividend)</span>{csvResult.failed>0&&<span style={{color:"#e03030",marginLeft:8}}>{csvResult.failed} přeskočeno</span>}</span>
-          <span style={{cursor:"pointer"}} onClick={()=>setCsvResult(null)}>×</span>
+        {csvState==="loading"&&<div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:12,color:"#3a6600"}}>⟳ Importuji CSV…</div>}
+        {csvState&&csvState!=="loading"&&<div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:12,color:"#3a6600",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>✓ Import hotov — {csvState.imported} záznamů <span style={{color:"#8a9478"}}>({csvState.counts.buy||0} nákupů · {csvState.counts.sell||0} prodejů · {csvState.counts.dividend||0} dividend)</span>{csvState.failed>0&&<span style={{color:"#e03030",marginLeft:8}}>{csvState.failed} chyb</span>}</span><span style={{cursor:"pointer"}} onClick={()=>setCsvState(null)}>×</span></div>}
+
+        {/* ── PŘEHLED ──────────────────────────────────────────────── */}
+        {tab==="přehled"&&<>
+          {/* Summary cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
+            {[
+              {label:"Hodnota portfolia",val:fmt(s.totalValue),sub:fmtPct(s.unrealPct)+" nerealizovaně",up:s.unrealPct>=0},
+              {label:"Nerealizovaný P&L",val:fmt(s.unrealPnl),sub:`z ${fmt(s.totalCost)} investováno`,up:s.unrealPnl>=0},
+              {label:"Realizovaný P&L",val:fmt(s.realPnl),sub:`${closed.length} uzavřených pozic`,up:s.realPnl>=0},
+              {label:"Celkový výnos",val:fmt(s.totalReturn),sub:`vč. ${fmt(s.totalDiv)} dividend`,up:s.totalReturn>=0},
+            ].map((c,i)=><div key={i} className="card" style={{animationDelay:`${i*.07}s`}}>
+              <div style={{fontSize:10,letterSpacing:1.5,color:"#8a9478",textTransform:"uppercase",marginBottom:10}}>{c.label}</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700}}>{c.val}</div>
+              <div style={{fontSize:11,marginTop:6}} className={c.up?"up":"down"}>{c.sub}</div>
+            </div>)}
+          </div>
+
+          {/* Chart */}
+          <div className="card" style={{padding:"28px",marginBottom:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600}}>Vývoj portfolia</div>
+                <div style={{fontSize:10,color:"#8a9478",letterSpacing:1,marginTop:2}}>NÁKLADY V ČASE + AKTUÁLNÍ HODNOTA</div>
+              </div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700}} className={s.unrealPnl>=0?"up":"down"}>{fmt(s.totalValue)}</div>
+            </div>
+            <HistoryChart history={history} prices={prices} open={open}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:10,color:"#8a9478"}}>
+              <span>{history.length?fmtDate(history[0].date):""}</span>
+              <span style={{color:"#6abf00"}}>Dnes</span>
+            </div>
+          </div>
+
+          {/* Positions + allocation */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:20}}>
+            <div className="card" style={{padding:"28px"}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:18}}>Otevřené pozice</div>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr><th style={{textAlign:"left"}}>Ticker</th><th style={{textAlign:"right"}}>Cena</th><th style={{textAlign:"right"}}>Průměr</th><th style={{textAlign:"right"}}>Hodnota</th><th style={{textAlign:"right"}}>P&L</th></tr></thead>
+                <tbody>
+                  {sortedOpen.slice(0,6).map(p=>{
+                    const price=prices[p.ticker]?.current??p.avgPrice;
+                    const val=p.shares*price, pnl=val-p.totalCost, pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
+                    return(<tr key={p.ticker} className="thr">
+                      <td><div style={{fontWeight:500}}>{p.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{p.name}</div></td>
+                      <td style={{textAlign:"right"}}>{fmt(price)}</td>
+                      <td style={{textAlign:"right",color:"#8a9478"}}>{fmt(p.avgPrice)}</td>
+                      <td style={{textAlign:"right",fontWeight:500}}>{fmt(val)}</td>
+                      <td style={{textAlign:"right"}}><div className={pnlPct>=0?"up":"down"}>{fmtPct(pnlPct)}</div><div style={{fontSize:10,color:pnl>=0?"#86efac":"#fca5a5"}}>{fmt(pnl)}</div></td>
+                    </tr>);
+                  })}
+                </tbody>
+              </table>
+              {open.length===0&&<div style={{textAlign:"center",padding:"24px",color:"#8a9478",fontSize:12}}>Žádné otevřené pozice. Importujte CSV nebo přidejte transakci.</div>}
+            </div>
+            <div className="card" style={{padding:"28px"}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Alokace</div>
+              <div style={{display:"flex",alignItems:"center",gap:16}}>
+                <Donut open={open} prices={prices}/>
+                <div style={{flex:1}}>
+                  {(()=>{
+                    const tot=s.totalValue||1,map={};
+                    open.forEach(p=>{const v=p.shares*(prices[p.ticker]?.current??p.avgPrice);map[p.category]=(map[p.category]||0)+v;});
+                    return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([cat,val])=>(
+                      <div key={cat} style={{marginBottom:10}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,fontSize:11}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:7,height:7,borderRadius:"50%",background:CAT_COLORS[cat]||"#94a3b8"}}/><span style={{color:"#8a9478"}}>{cat}</span></div>
+                          <span>{((val/tot)*100).toFixed(1)} %</span>
+                        </div>
+                        <div style={{background:"#eef1e8",borderRadius:3,height:4,overflow:"hidden"}}><div style={{width:`${(val/tot)*100}%`,height:"100%",background:CAT_COLORS[cat]||"#94a3b8",borderRadius:3}}/></div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>}
+
+        {/* ── POZICE ───────────────────────────────────────────────── */}
+        {tab==="pozice"&&<div className="card" style={{padding:"28px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:600,marginBottom:20}}>Otevřené pozice ({open.length})</div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr><th style={{textAlign:"left"}}>Ticker</th><th style={{textAlign:"right"}}>Akt. cena</th><th style={{textAlign:"right"}}>Prům. nákup</th><th style={{textAlign:"right"}}>Kusů</th><th style={{textAlign:"right"}}>Hodnota</th><th style={{textAlign:"right"}}>P&L dnes</th><th style={{textAlign:"right"}}>P&L celkem</th><th style={{textAlign:"right"}}>Podíl</th></tr></thead>
+            <tbody>
+              {sortedOpen.map(p=>{
+                const price=prices[p.ticker]?.current??p.avgPrice;
+                const chPct=prices[p.ticker]?.changePct??null,chAbs=prices[p.ticker]?.change??null;
+                const val=p.shares*price,pnl=val-p.totalCost,pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
+                const dayPnl=chAbs!=null?chAbs*p.shares:null;
+                const share=s.totalValue>0?(val/s.totalValue)*100:0;
+                return(<tr key={p.ticker} className="thr">
+                  <td><div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:8,background:`${CAT_COLORS[p.category]||"#94a3b8"}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:500,color:CAT_COLORS[p.category]||"#94a3b8"}}>{p.ticker.slice(0,3)}</div>
+                    <div><div style={{fontWeight:500}}>{p.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{p.name}</div></div>
+                  </div></td>
+                  <td style={{textAlign:"right"}}>{fmt(price)}</td>
+                  <td style={{textAlign:"right",color:"#8a9478"}}>{fmt(p.avgPrice)}</td>
+                  <td style={{textAlign:"right"}}>{fmtN(p.shares)}</td>
+                  <td style={{textAlign:"right",fontWeight:500}}>{fmt(val)}</td>
+                  <td style={{textAlign:"right"}}><div className={chPct==null?"":chPct>=0?"up":"down"}>{fmtPct(chPct)}</div>{dayPnl!=null&&<div style={{fontSize:10,color:dayPnl>=0?"#86efac":"#fca5a5"}}>{fmt(dayPnl)}</div>}</td>
+                  <td style={{textAlign:"right"}}><div className={pnlPct>=0?"up":"down"}>{fmtPct(pnlPct)}</div><div style={{fontSize:10,color:pnl>=0?"#86efac":"#fca5a5"}}>{fmt(pnl)}</div></td>
+                  <td style={{textAlign:"right"}}>
+                    <div style={{background:"#eef1e8",borderRadius:3,height:4,width:60,overflow:"hidden",marginLeft:"auto"}}><div style={{width:`${share}%`,height:"100%",background:"#6abf00",borderRadius:3}}/></div>
+                    <div style={{fontSize:9,color:"#8a9478",marginTop:2}}>{share.toFixed(1)} %</div>
+                  </td>
+                </tr>);
+              })}
+            </tbody>
+          </table>
+          {open.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#8a9478",fontSize:13}}>Žádné otevřené pozice.</div>}
         </div>}
 
-        {/* ── PŘEHLED ─────────────────────────────────────────────── */}
-        {activeTab==="přehled"&&(
-          <>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
-              {[
-                {label:"Celková hodnota",value:fmt(s.totalValue),sub:fmtPct(s.totalPct)+" celkem",up:s.totalPct>=0},
-                {label:"Zisk / Ztráta",value:fmt(s.totalPnl),sub:fmtPct(s.totalPct)+" od nákupu",up:s.totalPnl>=0},
-                {label:"Investováno",value:fmt(s.totalCost),sub:positions.length+" pozic",up:true},
-                {label:"Dividendy celkem",value:fmt(s.totalDividends),sub:dividends.length+" výplat",up:true},
-              ].map((c,i)=>(
-                <div key={i} className="card" style={{animationDelay:`${i*0.07}s`}}>
-                  <div style={{fontSize:10,letterSpacing:1.5,color:"#8a9478",textTransform:"uppercase",marginBottom:10}}>{c.label}</div>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700}}>{c.value}</div>
-                  <div style={{fontSize:11,marginTop:6,color:c.up===false?"#e03030":"#2ea84e"}}>{c.sub}</div>
-                </div>
+        {/* ── TRANSAKCE ────────────────────────────────────────────── */}
+        {tab==="transakce"&&<div className="card" style={{padding:"28px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:600,marginBottom:20}}>Historie transakcí ({transactions.filter(t=>t.txType!=="dividend").length})</div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr><th style={{textAlign:"left"}}>Datum</th><th style={{textAlign:"left"}}>Ticker</th><th style={{textAlign:"right"}}>Typ</th><th style={{textAlign:"right"}}>Kusů</th><th style={{textAlign:"right"}}>Realizační cena</th><th style={{textAlign:"right"}}>Objem</th><th style={{textAlign:"right"}}>Broker</th><th></th></tr></thead>
+            <tbody>
+              {[...transactions].filter(t=>t.txType!=="dividend").sort((a,b)=>new Date(b.datetime)-new Date(a.datetime)).map(tx=>(
+                <tr key={tx.id} className="thr">
+                  <td style={{color:"#8a9478",fontSize:11,whiteSpace:"nowrap"}}>{fmtDate(tx.datetime)}</td>
+                  <td><div style={{fontWeight:500}}>{tx.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{tx.name}</div></td>
+                  <td style={{textAlign:"right"}}><span className={`tag tag-${tx.txType}`}>{tx.txType==="buy"?"nákup":"prodej"}</span></td>
+                  <td style={{textAlign:"right"}} className={Number(tx.shares)<0?"down":""}>{fmtN(Math.abs(Number(tx.shares)))}</td>
+                  <td style={{textAlign:"right"}}>{fmt(tx.fillPrice)}</td>
+                  <td style={{textAlign:"right"}}>{tx.volume?fmt(tx.volume):""}</td>
+                  <td style={{textAlign:"right",fontSize:11,color:"#8a9478"}}>{tx.broker}</td>
+                  <td style={{textAlign:"right"}}><button className="del-btn" onClick={()=>handleDelete(tx.id,false)} style={{background:"#fff0f0",border:"none",borderRadius:6,width:26,height:26,cursor:"pointer",fontSize:12,color:"#e03030"}}>×</button></td>
+                </tr>
               ))}
-            </div>
+            </tbody>
+          </table>
+          {transactions.filter(t=>t.txType!=="dividend").length===0&&<div style={{textAlign:"center",padding:"40px",color:"#8a9478",fontSize:13}}>Žádné transakce. Importujte CSV.</div>}
+        </div>}
 
-            <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:20,marginBottom:20}}>
-              <div className="card" style={{padding:"24px 28px",animationDelay:"0.28s"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Vývoj portfolia</div>
-                <PortfolioChart totalValue={s.totalValue}/>
-                <div style={{display:"flex",justifyContent:"space-between",marginTop:8}}>
-                  {["1. úno","8. úno","15. úno","22. úno","Dnes"].map((l,i)=>(
-                    <span key={i} style={{fontSize:10,color:i===4?"#6abf00":"#8a9478"}}>{l}</span>
-                  ))}
-                </div>
-              </div>
-              <div className="card" style={{padding:"24px",animationDelay:"0.33s"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Alokace</div>
-                <div style={{display:"flex",alignItems:"center",gap:16}}>
-                  <Donut positions={positions} prices={prices}/>
-                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:10}}>
-                    {byCategory.map(({cat,pct})=>(
-                      <div key={cat} style={{display:"flex",alignItems:"center",gap:8,fontSize:11}}>
-                        <div style={{width:8,height:8,borderRadius:"50%",background:CAT_COLORS[cat]||"#94a3b8",flexShrink:0}}/>
-                        <span style={{color:"#8a9478",flex:1}}>{cat}</span>
-                        <span>{pct.toFixed(1)} %</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Top pozice */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:20}}>
-              <div className="card" style={{padding:"24px 28px",animationDelay:"0.38s"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:18}}>Největší pozice</div>
-                {[...positions].sort((a,b)=>b.shares*(prices[b.ticker]?.current??b.avgPrice)-a.shares*(prices[a.ticker]?.current??a.avgPrice)).slice(0,5).map(p=>{
-                  const price=prices[p.ticker]?.current??p.avgPrice;
-                  const val=p.shares*price, chPct=prices[p.ticker]?.changePct??null;
-                  const share=s.totalValue>0?(val/s.totalValue)*100:0;
-                  return (
-                    <div key={p.ticker} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #eef1e8"}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:`${CAT_COLORS[p.category]||"#94a3b8"}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:500,color:CAT_COLORS[p.category]||"#94a3b8"}}>{p.ticker.slice(0,3)}</div>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:500}}>{p.ticker}</div>
-                        <div style={{fontSize:10,color:"#8a9478"}}>{p.name}</div>
-                      </div>
-                      <Sparkline up={(chPct??0)>=0}/>
-                      <div style={{textAlign:"right"}}>
-                        <div style={{fontSize:13}}>{fmt(val)}</div>
-                        <div style={{fontSize:10,marginTop:2}} className={(chPct??0)>=0?"up":"down"}>{fmtPct(chPct)}</div>
-                      </div>
-                      <div style={{width:50,textAlign:"right",fontSize:10,color:"#8a9478"}}>{share.toFixed(1)} %</div>
-                    </div>
-                  );
-                })}
-                {positions.length===0&&<div style={{color:"#8a9478",fontSize:12,textAlign:"center",padding:"24px 0"}}>Žádné pozice. <span style={{color:"#6abf00",cursor:"pointer"}} onClick={()=>setShowModal(true)}>Přidat první →</span></div>}
-              </div>
-
-              <div className="card" style={{padding:"24px",animationDelay:"0.43s"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:18}}>Dnešní pohyby</div>
-                {positions.filter(p=>prices[p.ticker]).sort((a,b)=>Math.abs(prices[b.ticker]?.changePct??0)-Math.abs(prices[a.ticker]?.changePct??0)).slice(0,6).map(p=>{
-                  const ch=prices[p.ticker],up=ch.changePct>=0;
-                  return (
-                    <div key={p.ticker} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #eef1e8"}}>
-                      <div style={{width:34,height:34,borderRadius:10,background:up?"rgba(46,168,78,0.1)":"rgba(224,48,48,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:up?"#2ea84e":"#e03030"}}>{up?"↑":"↓"}</div>
-                      <div style={{flex:1}}><div style={{fontSize:12,fontWeight:500}}>{p.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{fmt(ch.current)}</div></div>
-                      <Sparkline up={up}/>
-                      <div style={{fontSize:12}} className={up?"up":"down"}>{fmtPct(ch.changePct)}</div>
-                    </div>
-                  );
-                })}
-                {positions.filter(p=>prices[p.ticker]).length===0&&<div style={{fontSize:12,color:"#8a9478"}}>Zatím žádná data.</div>}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ── POZICE ──────────────────────────────────────────────── */}
-        {activeTab==="pozice"&&(
-          <div className="card" style={{padding:"28px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:600}}>Všechny pozice</div>
-              <div style={{display:"flex",gap:6}}>
-                {[["value","Hodnota"],["pnl","Výkonnost"],["ticker","Ticker"]].map(([k,l])=>(
-                  <button key={k} className={`sort-btn${sortBy===k?" active":""}`} onClick={()=>setSortBy(k)}>{l}</button>
-                ))}
-              </div>
-            </div>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Název","Akt. cena","Prům. nákup","Kusů","Hodnota","P&L dnes","P&L celkem"].map((h,i)=>(
-                <th key={i} style={{fontSize:9,letterSpacing:1.5,color:"#8a9478",textAlign:i>0?"right":"left",paddingBottom:12,borderBottom:"1px solid #dde3d4",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-              ))}</tr></thead>
-              <tbody>
-                {sortedPositions.map(p=>{
-                  const price=prices[p.ticker]?.current??p.avgPrice;
-                  const chPct=prices[p.ticker]?.changePct??null, chAbs=prices[p.ticker]?.change??null;
-                  const val=p.shares*price, pnl=val-p.totalCost, pnlPct=p.totalCost>0?(pnl/p.totalCost)*100:0;
-                  const dayPnl=chAbs!=null?chAbs*p.shares:null;
-                  return (
-                    <tr key={p.ticker} className="pos-row">
-                      <td style={{padding:"13px 0",borderBottom:"1px solid #eef1e8"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10}}>
-                          <div style={{width:32,height:32,borderRadius:8,background:`${CAT_COLORS[p.category]||"#94a3b8"}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:500,color:CAT_COLORS[p.category]||"#94a3b8"}}>{p.ticker.slice(0,3)}</div>
-                          <div><div style={{fontSize:13,fontWeight:500}}>{p.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{p.name}</div></div>
-                        </div>
-                      </td>
-                      <td style={{textAlign:"right",fontSize:12,borderBottom:"1px solid #eef1e8"}}>{fmt(price)}</td>
-                      <td style={{textAlign:"right",fontSize:12,color:"#8a9478",borderBottom:"1px solid #eef1e8"}}>{fmt(p.avgPrice)}</td>
-                      <td style={{textAlign:"right",fontSize:12,borderBottom:"1px solid #eef1e8"}}>{fmtN(p.shares)}</td>
-                      <td style={{textAlign:"right",fontSize:12,fontWeight:500,borderBottom:"1px solid #eef1e8"}}>{fmt(val)}</td>
-                      <td style={{textAlign:"right",borderBottom:"1px solid #eef1e8"}}>
-                        <div style={{fontSize:12}} className={chPct==null?"":chPct>=0?"up":"down"}>{fmtPct(chPct)}</div>
-                        {dayPnl!=null&&<div style={{fontSize:10,color:dayPnl>=0?"#86efac":"#fca5a5"}}>{fmt(dayPnl)}</div>}
-                      </td>
-                      <td style={{textAlign:"right",borderBottom:"1px solid #eef1e8"}}>
-                        <div style={{fontSize:12}} className={pnlPct>=0?"up":"down"}>{fmtPct(pnlPct)}</div>
-                        <div style={{fontSize:10,color:pnl>=0?"#86efac":"#fca5a5"}}>{fmt(pnl)}</div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {positions.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:"#8a9478",fontSize:13}}>Žádné pozice. <span style={{color:"#6abf00",cursor:"pointer"}} onClick={()=>setShowModal(true)}>Přidat první →</span></div>}
+        {/* ── UZAVŘENÉ ─────────────────────────────────────────────── */}
+        {tab==="uzavřené"&&<>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,marginBottom:24}}>
+            {[
+              {label:"Realizovaný P&L",val:fmt(s.realPnl),sub:`${closed.length} uzavřených pozic`,up:s.realPnl>=0},
+              {label:"Průměr na pozici",val:fmt(closed.length?s.realPnl/closed.length:0),sub:"průměrný výsledek",up:s.realPnl>=0},
+              {label:"Úspěšnost",val:`${closed.length?Math.round((closed.filter(c=>c.realizedPnl>=0).length/closed.length)*100):0} %`,sub:`${closed.filter(c=>c.realizedPnl>=0).length} ziskových z ${closed.length}`,up:true},
+            ].map((c,i)=><div key={i} className="card" style={{animationDelay:`${i*.07}s`}}>
+              <div style={{fontSize:10,letterSpacing:1.5,color:"#8a9478",textTransform:"uppercase",marginBottom:10}}>{c.label}</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700}}>{c.val}</div>
+              <div style={{fontSize:11,marginTop:6}} className={c.up?"up":"down"}>{c.sub}</div>
+            </div>)}
           </div>
-        )}
-
-        {/* ── TRANSAKCE ───────────────────────────────────────────── */}
-        {activeTab==="transakce"&&(
           <div className="card" style={{padding:"28px"}}>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:17,fontWeight:600,marginBottom:20}}>Historie transakcí</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Uzavřené pozice</div>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Datum","Ticker","Název","Typ","Ks","Cena","Objem","Broker",""].map((h,i)=>(
-                <th key={i} style={{fontSize:9,letterSpacing:1.5,color:"#8a9478",textAlign:i>0&&i<8?"right":"left",paddingBottom:12,borderBottom:"1px solid #dde3d4",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-              ))}</tr></thead>
+              <thead><tr><th style={{textAlign:"left"}}>Ticker</th><th style={{textAlign:"right"}}>Uzavřeno</th><th style={{textAlign:"right"}}>Prům. nákup</th><th style={{textAlign:"right"}}>Cena prodeje</th><th style={{textAlign:"right"}}>Realizovaný P&L</th><th style={{textAlign:"right"}}>Broker</th></tr></thead>
               <tbody>
-                {[...transactions].sort((a,b)=>new Date(b.datetime||0)-new Date(a.datetime||0)).map(tx=>(
-                  <tr key={tx.id} className="pos-row">
-                    <td style={{padding:"11px 0",fontSize:11,color:"#8a9478",borderBottom:"1px solid #eef1e8",whiteSpace:"nowrap"}}>{tx.datetime?new Date(tx.datetime).toLocaleDateString("cs-CZ"):""}</td>
-                    <td style={{textAlign:"right",fontSize:12,fontWeight:500,borderBottom:"1px solid #eef1e8"}}>{tx.ticker}</td>
-                    <td style={{textAlign:"right",fontSize:11,color:"#8a9478",borderBottom:"1px solid #eef1e8"}}>{tx.name}</td>
-                    <td style={{textAlign:"right",borderBottom:"1px solid #eef1e8"}}>
-                      <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,background:tx.txType==="buy"?"#f0fdf4":tx.txType==="sell"?"#fff0f0":"#f8f4ff",color:tx.txType==="buy"?"#3a6600":tx.txType==="sell"?"#e03030":"#7c3aed"}}>
-                        {tx.txType==="buy"?"nákup":tx.txType==="sell"?"prodej":"div"}
-                      </span>
-                    </td>
-                    <td style={{textAlign:"right",fontSize:12,borderBottom:"1px solid #eef1e8"}} className={Number(tx.shares)<0?"down":""}>{fmtN(Math.abs(Number(tx.shares)))}</td>
-                    <td style={{textAlign:"right",fontSize:12,borderBottom:"1px solid #eef1e8"}}>{fmt(tx.fillPrice)}</td>
-                    <td style={{textAlign:"right",fontSize:12,borderBottom:"1px solid #eef1e8"}}>{tx.volume?fmt(tx.volume):""}</td>
-                    <td style={{textAlign:"right",fontSize:11,color:"#8a9478",borderBottom:"1px solid #eef1e8"}}>{tx.broker}</td>
-                    <td style={{borderBottom:"1px solid #eef1e8",textAlign:"right"}}>
-                      <button className="del-btn" onClick={()=>handleDeleteTx(tx.id)} style={{background:"#fff0f0",border:"none",borderRadius:6,width:26,height:26,cursor:"pointer",fontSize:12,color:"#e03030"}}>×</button>
-                    </td>
+                {[...closed].sort((a,b)=>new Date(b.closedAt)-new Date(a.closedAt)).map((c,i)=>(
+                  <tr key={i} className="thr">
+                    <td><div style={{fontWeight:500}}>{c.ticker}</div><div style={{fontSize:10,color:"#8a9478"}}>{c.name}</div></td>
+                    <td style={{textAlign:"right",color:"#8a9478",fontSize:11}}>{fmtDate(c.closedAt)}</td>
+                    <td style={{textAlign:"right",color:"#8a9478"}}>{fmt(c.avgBuyPrice)}</td>
+                    <td style={{textAlign:"right"}}>{fmt(c.sellPrice)}</td>
+                    <td style={{textAlign:"right"}}><div className={c.realizedPnl>=0?"up":"down"}>{fmtPct(c.realizedPct)}</div><div style={{fontSize:10,color:c.realizedPnl>=0?"#86efac":"#fca5a5"}}>{fmt(c.realizedPnl)}</div></td>
+                    <td style={{textAlign:"right",fontSize:11,color:"#8a9478"}}>{c.broker}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {transactions.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:"#8a9478",fontSize:13}}>Zatím žádné transakce.</div>}
+            {closed.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#8a9478",fontSize:13}}>Žádné uzavřené pozice.</div>}
           </div>
-        )}
+        </>}
 
-        {/* ── ALOKACE ─────────────────────────────────────────────── */}
-        {activeTab==="alokace"&&(
+        {/* ── DIVIDENDY ────────────────────────────────────────────── */}
+        {tab==="dividendy"&&<>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,marginBottom:24}}>
+            {(()=>{
+              const tot=dividends.reduce((s,d)=>s+Number(d.amount||0),0);
+              return [
+                {label:"Celkem přijato",val:fmt(tot),sub:`${dividends.length} výplat`,up:true},
+                {label:"Různých titulů",val:[...new Set(dividends.map(d=>d.ticker))].length,sub:"platí dividendu",up:true},
+                {label:"Průměr na výplatu",val:fmt(dividends.length?tot/dividends.length:0),sub:"na transakci",up:true},
+              ].map((c,i)=><div key={i} className="card" style={{animationDelay:`${i*.07}s`}}>
+                <div style={{fontSize:10,letterSpacing:1.5,color:"#8a9478",textTransform:"uppercase",marginBottom:10}}>{c.label}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700}}>{c.val}</div>
+                <div style={{fontSize:11,marginTop:6,color:"#2ea84e"}}>{c.sub}</div>
+              </div>);
+            })()}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
             <div className="card" style={{padding:"28px"}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Rozložení portfolia</div>
-              <div style={{display:"flex",alignItems:"center",gap:20}}>
-                <Donut positions={positions} prices={prices}/>
-                <div style={{flex:1}}>
-                  {byCategory.map(({cat,val,pct})=>(
-                    <div key={cat} style={{marginBottom:14}}>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:CAT_COLORS[cat]||"#94a3b8"}}/><span style={{fontSize:11,color:"#8a9478"}}>{cat}</span></div>
-                        <span style={{fontSize:11,fontWeight:500}}>{pct.toFixed(1)} % · {fmt(val)}</span>
-                      </div>
-                      <div style={{background:"#eef1e8",borderRadius:4,height:5,overflow:"hidden"}}>
-                        <div style={{width:`${pct}%`,height:"100%",background:CAT_COLORS[cat]||"#94a3b8",borderRadius:4,transition:"width 0.6s ease"}}/>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Podle tickeru</div>
+              {(()=>{
+                const tot=dividends.reduce((s,d)=>s+Number(d.amount||0),0)||1;
+                const map={};dividends.forEach(d=>{map[d.ticker]=(map[d.ticker]||0)+Number(d.amount||0);});
+                return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([ticker,amt])=>(
+                  <div key={ticker} style={{marginBottom:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:12}}><span style={{fontWeight:500}}>{ticker}</span><span>{fmt(amt)} <span style={{color:"#8a9478"}}>({((amt/tot)*100).toFixed(1)} %)</span></span></div>
+                    <div style={{background:"#eef1e8",borderRadius:4,height:5,overflow:"hidden"}}><div style={{width:`${(amt/tot)*100}%`,height:"100%",background:"#f0a500",borderRadius:4}}/></div>
+                  </div>
+                ));
+              })()}
+              {dividends.length===0&&<div style={{color:"#8a9478",fontSize:12}}>Žádné dividendy.</div>}
             </div>
             <div className="card" style={{padding:"28px"}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Jednotlivé pozice</div>
-              {sortedPositions.map(p=>{
-                const val=p.shares*(prices[p.ticker]?.current??p.avgPrice), share=s.totalValue>0?(val/s.totalValue)*100:0;
-                return (
-                  <div key={p.ticker} style={{marginBottom:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:CAT_COLORS[p.category]||"#94a3b8"}}/><span style={{fontSize:11,color:"#8a9478"}}>{p.ticker}</span></div>
-                      <span style={{fontSize:11}}>{share.toFixed(1)} % · {fmt(val)}</span>
-                    </div>
-                    <div style={{background:"#eef1e8",borderRadius:4,height:4,overflow:"hidden"}}>
-                      <div style={{width:`${share}%`,height:"100%",background:CAT_COLORS[p.category]||"#94a3b8",borderRadius:4,transition:"width 0.6s ease"}}/>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="card" style={{padding:"24px 28px",gridColumn:"1/-1"}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:18}}>Výkonnost podle kategorie</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-                {byCategory.map(({cat,val})=>{
-                  const catPos=positions.filter(p=>p.category===cat);
-                  const catCost=catPos.reduce((s,p)=>s+p.totalCost,0);
-                  const catPnl=val-catCost, catPct=catCost>0?(catPnl/catCost)*100:0;
-                  return (
-                    <div key={cat} style={{background:"#f4f6f0",borderRadius:12,padding:"16px 18px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><div style={{width:10,height:10,borderRadius:"50%",background:CAT_COLORS[cat]||"#94a3b8"}}/><span style={{fontSize:10,letterSpacing:0.5,color:"#8a9478",textTransform:"uppercase"}}>{cat}</span></div>
-                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700}}>{fmt(val)}</div>
-                      <div style={{fontSize:11,marginTop:4}} className={catPct>=0?"up":"down"}>{fmtPct(catPct)} · {fmt(catPnl)}</div>
-                    </div>
-                  );
-                })}
-              </div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Historie výplat</div>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr><th style={{textAlign:"left"}}>Datum</th><th style={{textAlign:"left"}}>Ticker</th><th style={{textAlign:"right"}}>Výše</th><th style={{textAlign:"right"}}>Měna</th><th></th></tr></thead>
+                <tbody>
+                  {[...dividends].sort((a,b)=>new Date(b.datetime)-new Date(a.datetime)).map(d=>(
+                    <tr key={d.id} className="thr">
+                      <td style={{color:"#8a9478",fontSize:11}}>{fmtDate(d.datetime)}</td>
+                      <td style={{fontWeight:500}}>{d.ticker}</td>
+                      <td style={{textAlign:"right",color:"#2ea84e"}}>+{fmt(d.amount)}</td>
+                      <td style={{textAlign:"right",color:"#8a9478",fontSize:11}}>{d.currency}</td>
+                      <td style={{textAlign:"right"}}><button className="del-btn" onClick={()=>handleDelete(d.id,true)} style={{background:"#fff0f0",border:"none",borderRadius:6,width:26,height:26,cursor:"pointer",fontSize:12,color:"#e03030"}}>×</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        )}
+        </>}
 
-        {/* ── BROKEŘI ─────────────────────────────────────────────── */}
-        {activeTab==="brokeři"&&(()=>{
-          const brokerMap={};
-          positions.forEach(p=>{
-            const b=p.broker||"Nezadán", price=prices[p.ticker]?.current??p.avgPrice, val=p.shares*price;
-            if (!brokerMap[b]) brokerMap[b]={value:0,cost:0,positions:[]};
-            brokerMap[b].value+=val; brokerMap[b].cost+=p.totalCost; brokerMap[b].positions.push(p);
-          });
-          const brokers=Object.entries(brokerMap).map(([name,d])=>({name,...d,pnl:d.value-d.cost,pnlPct:d.cost>0?((d.value-d.cost)/d.cost)*100:0,share:s.totalValue>0?(d.value/s.totalValue)*100:0})).sort((a,b)=>b.value-a.value);
-          const gc=name=>BROKER_COLORS[name]||"#94a3b8";
-          return (
+        {/* ── BROKEŘI ──────────────────────────────────────────────── */}
+        {tab==="brokeři"&&(()=>{
+          const map={};
+          open.forEach(p=>{const b=p.broker||"Nezadán",price=prices[p.ticker]?.current??p.avgPrice,val=p.shares*price;if(!map[b])map[b]={val:0,cost:0,positions:[]};map[b].val+=val;map[b].cost+=p.totalCost;map[b].positions.push(p);});
+          const bs=Object.entries(map).map(([name,d])=>({name,...d,pnl:d.val-d.cost,pnlPct:d.cost>0?((d.val-d.cost)/d.cost)*100:0,share:s.totalValue>0?(d.val/s.totalValue)*100:0})).sort((a,b)=>b.val-a.val);
+          const gc=n=>BROKER_COLORS[n]||"#94a3b8";
+          return(
             <div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:16,marginBottom:24}}>
-                {brokers.map((b,i)=>(
-                  <div key={b.name} className="card" style={{animationDelay:`${i*0.07}s`,borderTop:`3px solid ${gc(b.name)}`}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:`${gc(b.name)}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:gc(b.name),fontFamily:"'Syne',sans-serif"}}>{b.name.slice(0,2).toUpperCase()}</div>
-                      <div><div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700}}>{b.name}</div><div style={{fontSize:10,color:"#8a9478"}}>{b.positions.length} pozic · {b.share.toFixed(1)} % portfolia</div></div>
-                    </div>
-                    <div style={{marginBottom:8}}><div style={{fontSize:10,color:"#8a9478",letterSpacing:1,textTransform:"uppercase",marginBottom:4}}>Celková hodnota</div><div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700}}>{fmt(b.value)}</div></div>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
-                      <div><div style={{color:"#8a9478",marginBottom:2}}>Investováno</div><div>{fmt(b.cost)}</div></div>
-                      <div style={{textAlign:"right"}}><div style={{color:"#8a9478",marginBottom:2}}>Zisk / Ztráta</div><div className={b.pnlPct>=0?"up":"down"}>{fmtPct(b.pnlPct)} · {fmt(b.pnl)}</div></div>
-                    </div>
-                    <div style={{marginTop:12,background:"#eef1e8",borderRadius:4,height:4,overflow:"hidden"}}><div style={{width:`${b.share}%`,height:"100%",background:gc(b.name),borderRadius:4,transition:"width 0.6s ease"}}/></div>
+                {bs.map((b,i)=><div key={b.name} className="card" style={{animationDelay:`${i*.07}s`,borderTop:`3px solid ${gc(b.name)}`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                    <div style={{width:36,height:36,borderRadius:10,background:`${gc(b.name)}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:gc(b.name),fontFamily:"'Syne',sans-serif"}}>{b.name.slice(0,2).toUpperCase()}</div>
+                    <div><div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700}}>{b.name}</div><div style={{fontSize:10,color:"#8a9478"}}>{b.positions.length} pozic · {b.share.toFixed(1)} % portfolia</div></div>
                   </div>
-                ))}
-              </div>
-              <div className="card" style={{padding:"28px",marginBottom:20}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Porovnání brokerů</div>
-                {brokers.map(b=>(
-                  <div key={b.name} style={{marginBottom:18}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:"50%",background:gc(b.name)}}/><span style={{fontSize:12,fontWeight:500}}>{b.name}</span><span style={{fontSize:10,color:"#8a9478"}}>{b.positions.length} pozic</span></div>
-                      <div style={{display:"flex",gap:20,fontSize:11}}><span>{fmt(b.value)}</span><span className={b.pnlPct>=0?"up":"down"}>{fmtPct(b.pnlPct)}</span></div>
-                    </div>
-                    <div style={{background:"#eef1e8",borderRadius:6,height:10,overflow:"hidden"}}><div style={{width:`${b.share}%`,height:"100%",background:gc(b.name),borderRadius:6,transition:"width 0.6s ease"}}/></div>
+                  <div style={{marginBottom:8}}><div style={{fontSize:10,color:"#8a9478",letterSpacing:1,textTransform:"uppercase",marginBottom:4}}>Celková hodnota</div><div style={{fontFamily:"'Syne',sans-serif",fontSize:22,fontWeight:700}}>{fmt(b.val)}</div></div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
+                    <div><div style={{color:"#8a9478",marginBottom:2}}>Investováno</div><div>{fmt(b.cost)}</div></div>
+                    <div style={{textAlign:"right"}}><div style={{color:"#8a9478",marginBottom:2}}>Zisk / Ztráta</div><div className={b.pnlPct>=0?"up":"down"}>{fmtPct(b.pnlPct)}</div></div>
                   </div>
-                ))}
-                {brokers.length===0&&<div style={{color:"#8a9478",fontSize:12}}>Žádné pozice.</div>}
+                  <div style={{marginTop:12,background:"#eef1e8",borderRadius:4,height:4,overflow:"hidden"}}><div style={{width:`${b.share}%`,height:"100%",background:gc(b.name),borderRadius:4}}/></div>
+                </div>)}
               </div>
-            </div>
-          );
-        })()}
-
-        {/* ── DIVIDENDY ───────────────────────────────────────────── */}
-        {activeTab==="dividendy"&&(()=>{
-          const totalDiv=dividends.reduce((s,d)=>s+Number(d.amount||0),0);
-          const byTicker={};
-          dividends.forEach(d=>{ byTicker[d.ticker]=(byTicker[d.ticker]||0)+Number(d.amount||0); });
-          const sorted=[...dividends].sort((a,b)=>new Date(b.datetime||0)-new Date(a.datetime||0));
-          return (
-            <div>
-              {/* Karty */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,marginBottom:24}}>
-                {[
-                  {label:"Celkem přijato",value:fmt(totalDiv),sub:`${dividends.length} výplat`},
-                  {label:"Různých titulů",value:Object.keys(byTicker).length,sub:"platí dividendu"},
-                  {label:"Průměr na výplatu",value:fmt(dividends.length>0?totalDiv/dividends.length:0),sub:"na transakci"},
-                ].map((c,i)=>(
-                  <div key={i} className="card" style={{animationDelay:`${i*0.07}s`}}>
-                    <div style={{fontSize:10,letterSpacing:1.5,color:"#8a9478",textTransform:"uppercase",marginBottom:10}}>{c.label}</div>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:700}}>{c.value}</div>
-                    <div style={{fontSize:11,marginTop:6,color:"#2ea84e"}}>{c.sub}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-                {/* Dividendy podle tickeru */}
-                <div className="card" style={{padding:"28px"}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Podle tickeru</div>
-                  {Object.entries(byTicker).sort((a,b)=>b[1]-a[1]).map(([ticker,amount])=>{
-                    const pct=totalDiv>0?(amount/totalDiv)*100:0;
-                    return (
-                      <div key={ticker} style={{marginBottom:14}}>
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                          <span style={{fontSize:12,fontWeight:500}}>{ticker}</span>
-                          <span style={{fontSize:11}}>{fmt(amount)} <span style={{color:"#8a9478"}}>({pct.toFixed(1)} %)</span></span>
-                        </div>
-                        <div style={{background:"#eef1e8",borderRadius:4,height:5,overflow:"hidden"}}>
-                          <div style={{width:`${pct}%`,height:"100%",background:"#f0a500",borderRadius:4,transition:"width 0.6s ease"}}/>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {Object.keys(byTicker).length===0&&<div style={{color:"#8a9478",fontSize:12}}>Zatím žádné dividendy.</div>}
-                </div>
-                {/* Historie výplat */}
-                <div className="card" style={{padding:"28px"}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,marginBottom:20}}>Historie výplat</div>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <thead><tr>{["Datum","Ticker","Výše","Měna","Broker"].map((h,i)=>(
-                      <th key={i} style={{fontSize:9,letterSpacing:1.5,color:"#8a9478",textAlign:i>0?"right":"left",paddingBottom:10,borderBottom:"1px solid #dde3d4",textTransform:"uppercase"}}>{h}</th>
-                    ))}</tr></thead>
-                    <tbody>
-                      {sorted.map(d=>(
-                        <tr key={d.id}>
-                          <td style={{padding:"10px 0",fontSize:11,color:"#8a9478",borderBottom:"1px solid #eef1e8",whiteSpace:"nowrap"}}>{d.datetime?new Date(d.datetime).toLocaleDateString("cs-CZ"):""}</td>
-                          <td style={{textAlign:"right",fontSize:12,fontWeight:500,borderBottom:"1px solid #eef1e8"}}>{d.ticker}</td>
-                          <td style={{textAlign:"right",fontSize:12,borderBottom:"1px solid #eef1e8",color:"#2ea84e"}}>+{fmt(d.amount)}</td>
-                          <td style={{textAlign:"right",fontSize:11,color:"#8a9478",borderBottom:"1px solid #eef1e8"}}>{d.currency}</td>
-                          <td style={{textAlign:"right",fontSize:11,color:"#8a9478",borderBottom:"1px solid #eef1e8"}}>{d.broker}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {dividends.length===0&&<div style={{textAlign:"center",padding:"24px 0",color:"#8a9478",fontSize:12}}>Žádné výplaty dividend.</div>}
-                </div>
-              </div>
+              {bs.length===0&&<div className="card" style={{padding:"40px",textAlign:"center",color:"#8a9478",fontSize:13}}>Importujte transakce pro zobrazení statistik brokerů.</div>}
             </div>
           );
         })()}
       </main>
 
-      {showModal&&<Modal onClose={()=>setShowModal(false)} onAdd={handleAdd} loading={savingTx}/>}
+      {showModal&&<Modal onClose={()=>setShowModal(false)} onAdd={handleAdd} loading={saving}/>}
     </div>
   );
 }
