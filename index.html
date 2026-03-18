@@ -61,7 +61,8 @@ const apiPost  = async b => (await fetch(API,{method:"POST",body:JSON.stringify(
 // ── Core engine: compute portfolio state from raw transactions ─────────────
 // Returns: { open, closed, dividends, history }
 function computePortfolio(transactions) {
-  const txs = [...transactions].sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
+  const parseDate = d => { try { return new Date(String(d).replace(" ","T")); } catch { return new Date(0); }};
+  const txs = [...transactions].filter(t=>t&&t.ticker).sort((a,b)=>parseDate(a.datetime)-parseDate(b.datetime));
 
   const positions = {};
   const closed    = [];
@@ -117,7 +118,7 @@ function computePortfolio(transactions) {
     }
 
     const totalCost = Object.values(positions).reduce((s,p)=>s+p.totalCost,0);
-    history.push({ date:tx.datetime, totalCost });
+    history.push({ date:parseDate(tx.datetime).toISOString(), totalCost });
   }
 
   return {
@@ -135,7 +136,7 @@ const Sparkline = ({up}) => (
 );
 
 // ── Portfolio history chart ────────────────────────────────────────────────
-function HistoryChart({history, prices, open, getValCZK}) {
+function HistoryChart({history, prices, open, fx}) {
   const [period, setPeriod]   = useState("MAX");
   const [tooltip, setTooltip] = useState(null);
   const svgRef = useRef(null);
@@ -145,8 +146,16 @@ function HistoryChart({history, prices, open, getValCZK}) {
   // Build timeline points from history + current value
   const allPoints = useMemo(() => {
     if (!history.length) return [];
-    const pts = history.map(h => ({ date: new Date(h.date), val: h.totalCost }));
-    const currentVal = open.reduce((s,p) => s + getValCZK(p), 0);
+    const pts = history.map(h => { try { return { date: new Date(h.date), val: Number(h.totalCost)||0 }; } catch { return null; }}).filter(Boolean);
+    const currentVal = open.reduce((s,p) => {
+      const native = prices[p.ticker]?.current;
+      if (native && native > 0) {
+        const cur = (p.currency||"USD").toUpperCase();
+        const rate = cur === "CZK" ? 1 : (fx[cur] || fx["USD"] || 25);
+        return s + p.shares * native * rate;
+      }
+      return s + p.totalCost;
+    }, 0);
     if (currentVal > 0) pts.push({ date: new Date(), val: currentVal });
     // Deduplicate by day — keep last value per day
     const byDay = {};
@@ -581,18 +590,19 @@ function App(){
       const counts={buy:0,sell:0,dividend:0};
       txs.forEach(t=>counts[t.txType]=(counts[t.txType]||0)+1);
 
-      // Batch category lookup for unique tickers (skip dividends)
+      // Batch category lookup — fire and forget, don't block on errors
       const uniqueTickers=[...new Set(txs.filter(t=>t.txType!=="dividend").map(t=>t.ticker))];
       const categoryMap={};
-      await Promise.all(uniqueTickers.map(async ticker=>{
-        try{
-          const r=await fetch(API+"?"+new URLSearchParams({action:"getCompanyName",ticker}));
-          const d=await r.json();
-          if(d.category) categoryMap[ticker]=d.category;
-          if(d.name)     categoryMap[ticker+"_name"]=d.name;
-        }catch{}
-      }));
-      // Apply looked-up categories and names
+      try {
+        await Promise.allSettled(uniqueTickers.map(async ticker=>{
+          try{
+            const r=await fetch(API+"?"+new URLSearchParams({action:"getCompanyName",ticker}));
+            const d=await r.json();
+            if(d.category) categoryMap[ticker]=d.category;
+            if(d.name)     categoryMap[ticker+"_name"]=d.name;
+          }catch{}
+        }));
+      } catch {}
       txs.forEach(tx=>{
         if(categoryMap[tx.ticker])     tx.category=categoryMap[tx.ticker];
         if(categoryMap[tx.ticker+"_name"]&&tx.name===tx.ticker) tx.name=categoryMap[tx.ticker+"_name"];
@@ -627,11 +637,13 @@ function App(){
 
   const stats = useMemo(()=>{
     const totalValue = open.reduce((s,p)=>{
-      const priceNative = prices[p.ticker]?.current ?? 0;
-      const valueCZK    = priceNative > 0 ? toCZK(priceNative, p.currency) * p.shares : p.totalCost;
-      return s + valueCZK;
+      try {
+        const priceNative = prices[p.ticker]?.current ?? 0;
+        const valueCZK    = priceNative > 0 ? toCZK(priceNative, p.currency) * Number(p.shares) : Number(p.totalCost)||0;
+        return s + (isNaN(valueCZK)?0:valueCZK);
+      } catch { return s; }
     }, 0);
-    const totalCost  = open.reduce((s,p)=>s+p.totalCost, 0);
+    const totalCost  = open.reduce((s,p)=>s+(isNaN(Number(p.totalCost))?0:Number(p.totalCost)), 0);
     const unrealPnl  = totalValue - totalCost;
     const unrealPct  = totalCost > 0 ? (unrealPnl/totalCost)*100 : 0;
     const realPnl    = closed.reduce((s,c)=>s+c.realizedPnl, 0);
@@ -714,7 +726,7 @@ function App(){
               </div>
               <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700}} className={s.unrealPnl>=0?"up":"down"}>{fmt(s.totalValue)}</div>
             </div>
-            <HistoryChart history={history} prices={prices} open={open} getValCZK={getValCZK}/>
+            <HistoryChart history={history} prices={prices} open={open} fx={fx}/>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:10,color:"#8a9478"}}>
               <span>{history.length?fmtDate(history[0].date):""}</span>
               <span style={{color:"#6abf00"}}>Dnes</span>
